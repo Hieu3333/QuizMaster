@@ -1,6 +1,8 @@
 import { User } from '@prisma/client';
 import { prisma } from '../../db';
 
+
+// use `prisma` in your application to read and write data in your DB
 // **** Functions **** //
 
 // Get one user by their id
