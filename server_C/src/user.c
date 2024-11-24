@@ -18,7 +18,8 @@ User* json_to_user(const json_object *obj) {
     json_object *id_obj, *username_obj, *password_obj, *wins_obj, *total_score_obj, *played_games_obj, *created_at_obj, *updated_at_obj;
 
     if (json_object_object_get_ex(obj, "_id", &id_obj)) {
-        strncpy(user->id, json_object_get_string(id_obj), sizeof(user->id) - 1);
+        const char *id_str = json_object_get_string(id_obj);
+        bson_oid_init_from_string(&user->id, id_str); // Convert the string to bson_oid_t
     }
 
     if (json_object_object_get_ex(obj, "username", &username_obj)) {
@@ -52,38 +53,77 @@ User* json_to_user(const json_object *obj) {
     return user;
 }
 
-// Function to get a user by their ID (returns a User object)
-User* get_one_by_id(const char *id) {
+User* get_one_by_id(bson_oid_t *id) {
     mongoc_client_t *client = get_mongo_client();
     mongoc_collection_t *collection = mongoc_client_get_collection(client, "quizmaster", "User");
 
     bson_t *query = bson_new();
-    BSON_APPEND_UTF8(query, "_id", id);
+    BSON_APPEND_OID(query, "_id", id);  // Query by ObjectId
 
     mongoc_cursor_t *cursor = mongoc_collection_find_with_opts(collection, query, NULL, NULL);
     const bson_t *doc = NULL;
+
     if (mongoc_cursor_next(cursor, &doc)) {
-        // Convert BSON to JSON
-        char *json_str = bson_as_json(doc, NULL);
-        json_object *json_obj = json_tokener_parse(json_str);
+        // Initialize the User struct
+        User *user = (User *)malloc(sizeof(User));  // Allocate memory for the User struct
+        if (!user) {
+            // Handle memory allocation failure
+            bson_destroy(query);
+            mongoc_cursor_destroy(cursor);
+            mongoc_collection_destroy(collection);
+            return NULL;
+        }
+
+        // Extract fields directly from BSON document
+        bson_iter_t iter;
+
+        // Extract _id field
+        if (bson_iter_init_find(&iter, doc, "_id")) {
+            bson_oid_copy(bson_iter_oid(&iter), &user->id);  // Copy the BSON ObjectId into the User struct
+        }
+
+        // Extract username field
+        if (bson_iter_init_find(&iter, doc, "username")) {
+            user->username = strdup(bson_iter_utf8(&iter, NULL));  // Copy the username string
+        }
+
+        // Extract password field
+        if (bson_iter_init_find(&iter, doc, "password")) {
+            user->password = strdup(bson_iter_utf8(&iter, NULL));  // Copy the password string
+        }
+
+        // Extract other fields
+        if (bson_iter_init_find(&iter, doc, "wins")) {
+            user->wins = bson_iter_int32(&iter);
+        }
+        if (bson_iter_init_find(&iter, doc, "totalScore")) {
+            user->totalScore = bson_iter_int32(&iter);
+        }
+        if (bson_iter_init_find(&iter, doc, "playedGames")) {
+            user->playedGames = bson_iter_int32(&iter);
+        }
+        if (bson_iter_init_find(&iter, doc, "createdAt")) {
+            user->createdAt = bson_iter_int64(&iter);  // Assuming createdAt is a Unix timestamp
+        }
+        if (bson_iter_init_find(&iter, doc, "updatedAt")) {
+            user->updatedAt = bson_iter_int64(&iter);  // Assuming updatedAt is a Unix timestamp
+        }
+
         bson_destroy(query);
         mongoc_cursor_destroy(cursor);
         mongoc_collection_destroy(collection);
-        free(json_str);
 
-        // Convert JSON object to User struct and return
-        User *user = json_to_user(json_obj);
-        json_object_put(json_obj); // Free JSON object
-        return user;
+        return user;  // Return the populated User struct
     }
 
     bson_destroy(query);
     mongoc_cursor_destroy(cursor);
     mongoc_collection_destroy(collection);
-    return NULL;
+
+    return NULL;  // Return NULL if no user is found
 }
 
-// Function to get a user by their username (returns a User object)
+
 User* get_one_by_username(const char *username) {
     mongoc_client_t *client = get_mongo_client();
     mongoc_collection_t *collection = mongoc_client_get_collection(client, "quizmaster", "User");
@@ -94,28 +134,75 @@ User* get_one_by_username(const char *username) {
     mongoc_cursor_t *cursor = mongoc_collection_find_with_opts(collection, query, NULL, NULL);
     const bson_t *doc = NULL;
     if (mongoc_cursor_next(cursor, &doc)) {
-        // Convert BSON to JSON
-        char *json_str = bson_as_json(doc, NULL);
-        json_object *json_obj = json_tokener_parse(json_str);
+        // Create a new User object
+        User *user = (User*) malloc(sizeof(User));
+        if (!user) {
+            bson_destroy(query);
+            mongoc_cursor_destroy(cursor);
+            mongoc_collection_destroy(collection);
+            return NULL; // Memory allocation failure
+        }
+
+        // Extract fields directly from BSON into the User struct
+        bson_iter_t iter;
+
+        // Extract "username"
+        if (bson_iter_init_find(&iter, doc, "username")) {
+            user->username = strdup(bson_iter_utf8(&iter, NULL)); // Ensure username is properly copied
+        }
+
+        // Extract "password"
+        if (bson_iter_init_find(&iter, doc, "password")) {
+            user->password = strdup(bson_iter_utf8(&iter, NULL)); // Ensure password is properly copied
+        }
+
+        // Extract "wins"
+        if (bson_iter_init_find(&iter, doc, "wins")) {
+            user->wins = bson_iter_int32(&iter);
+        }
+
+        // Extract "totalScore"
+        if (bson_iter_init_find(&iter, doc, "totalScore")) {
+            user->totalScore = bson_iter_int32(&iter);
+        }
+
+        // Extract "playedGames"
+        if (bson_iter_init_find(&iter, doc, "playedGames")) {
+            user->playedGames = bson_iter_int32(&iter);
+        }
+
+        // Extract "createdAt" and "updatedAt" timestamps
+        if (bson_iter_init_find(&iter, doc, "createdAt")) {
+            user->createdAt = bson_iter_time_t(&iter);
+        }
+        if (bson_iter_init_find(&iter, doc, "updatedAt")) {
+            user->updatedAt = bson_iter_time_t(&iter);
+        }
+
+        // Extract the ObjectId
+        if (bson_iter_init_find(&iter, doc, "_id")) {
+            bson_oid_copy(bson_iter_oid(&iter), &user->id);  // Copy the ObjectId directly into the user struct
+        }
+
+        // Clean up
         bson_destroy(query);
         mongoc_cursor_destroy(cursor);
         mongoc_collection_destroy(collection);
-        free(json_str);
 
-        // Convert JSON object to User struct and return
-        User *user = json_to_user(json_obj);
-        json_object_put(json_obj); // Free JSON object
         return user;
     }
 
+    // Clean up if no user is found
     bson_destroy(query);
     mongoc_cursor_destroy(cursor);
     mongoc_collection_destroy(collection);
+
     return NULL;
 }
 
+
 // Function to check if a user with the given ID exists
-bool persists_by_id(const char *id) {
+bool persists_by_id(const bson_oid_t *id) {
     User *user = get_one_by_id(id);
     bool exists = user != NULL;
     if (user) free(user); // Free User object
@@ -135,49 +222,45 @@ void add_user(const char *username, const char *password) {
     mongoc_client_t *client = get_mongo_client();
     mongoc_collection_t *collection = mongoc_client_get_collection(client, "quizmaster", "User");
 
-    // Create a new JSON object for the new user
-    json_object *new_user = json_object_new_object();
-    json_object_object_add(new_user, "username", json_object_new_string(username));
-    json_object_object_add(new_user, "password", json_object_new_string(password));
-    json_object_object_add(new_user, "wins", json_object_new_int(0));
-    json_object_object_add(new_user, "totalScore", json_object_new_int(0));
-    json_object_object_add(new_user, "playedGames", json_object_new_int(0));
-    json_object_object_add(new_user, "createdAt", json_object_new_int64((int64_t)time(NULL) * 1000));
-    json_object_object_add(new_user, "updatedAt", json_object_new_int64((int64_t)time(NULL) * 1000));
 
-    // Convert JSON to BSON for MongoDB insertion
-    const char *json_str = json_object_to_json_string(new_user);
-    bson_t *bson_data = bson_new_from_json((const uint8_t *)json_str, strlen(json_str), NULL);
+    // Create a BSON document for the new user
+    bson_t *new_user = bson_new();
+  
+    BSON_APPEND_UTF8(new_user, "username", username);
+    BSON_APPEND_UTF8(new_user, "password", password);
+    BSON_APPEND_INT32(new_user, "wins", 0);
+    BSON_APPEND_INT32(new_user, "totalScore", 0);
+    BSON_APPEND_INT32(new_user, "playedGames", 0);
+    BSON_APPEND_DATE_TIME(new_user, "createdAt", (int64_t)time(NULL) * 1000);
+    BSON_APPEND_DATE_TIME(new_user, "updatedAt", (int64_t)time(NULL) * 1000);
 
     // Insert the user into the MongoDB collection
-    mongoc_collection_insert_one(collection, bson_data, NULL, NULL, NULL);
+    mongoc_collection_insert_one(collection, new_user, NULL, NULL, NULL);
 
     // Cleanup
-    bson_destroy(bson_data);
-    json_object_put(new_user);
+    bson_destroy(new_user);
     mongoc_collection_destroy(collection);
 }
 
 // Function to update a user's data (wins, totalScore, playedGames)
-void update_user(const char *id, int wins, int totalScore, int playedGames) {
+void update_user(const bson_oid_t *id, int wins, int totalScore, int playedGames) {
     mongoc_client_t *client = get_mongo_client();
     mongoc_collection_t *collection = mongoc_client_get_collection(client, "quizmaster", "User");
 
     // Create the query document to find the user by ID
     bson_t *query = bson_new();
-    BSON_APPEND_UTF8(query, "_id", id);
+    BSON_APPEND_OID(query, "_id", id);
 
     // Create the update document with $set
     bson_t *update = bson_new();
-    bson_t child;  // Create a new bson_t object
-    BSON_APPEND_DOCUMENT_BEGIN(update, "$set", &child);  // Pass the new bson_t object
+    bson_t child;
+    BSON_APPEND_DOCUMENT_BEGIN(update, "$set", &child);
 
-
-    // Add fields to the update document manually
-    BSON_APPEND_INT32(update, "wins", wins);
-    BSON_APPEND_INT32(update, "totalScore", totalScore);
-    BSON_APPEND_INT32(update, "playedGames", playedGames);
-    BSON_APPEND_DATE_TIME(update, "updatedAt", (int64_t)time(NULL) * 1000);
+    BSON_APPEND_INT32(&child, "wins", wins);
+    BSON_APPEND_INT32(&child, "totalScore", totalScore);
+    BSON_APPEND_INT32(&child, "playedGames", playedGames);
+    BSON_APPEND_DATE_TIME(&child, "updatedAt", (int64_t)time(NULL) * 1000);
+    bson_append_document_end(update, &child);
 
     // Perform the update operation
     mongoc_collection_update_one(collection, query, update, NULL, NULL, NULL);
@@ -189,13 +272,13 @@ void update_user(const char *id, int wins, int totalScore, int playedGames) {
 }
 
 // Function to delete a user by their id
-void delete_user(const char *id) {
+void delete_user(const bson_oid_t *id) {
     mongoc_client_t *client = get_mongo_client();
     mongoc_collection_t *collection = mongoc_client_get_collection(client, "quizmaster", "User");
 
     // Create query to find the user by ID
     bson_t *query = bson_new();
-    BSON_APPEND_UTF8(query, "_id", id);
+    BSON_APPEND_OID(query, "_id", id);
 
     // Delete the user from the collection
     mongoc_collection_delete_one(collection, query, NULL, NULL, NULL);

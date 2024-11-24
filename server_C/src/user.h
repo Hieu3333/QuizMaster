@@ -3,25 +3,28 @@
 
 #include <stdbool.h>
 #include <time.h>
+#include <bson/bson.h> // Include bson library for bson_oid_t type
+
 typedef struct {
-    char id[25];             // User ID (MongoDB ObjectId)
-    char username[256];      // Username
-    char password[256];      // Password (Store as plain text, consider hashing in practice)
-    int wins;                // Number of wins
-    int totalScore;          // Total score
-    int playedGames;         // Total games played
-    time_t createdAt;        // Account creation timestamp
-    time_t updatedAt;        // Last updated timestamp
+    bson_oid_t id;
+    char *username;   // Ensure these are char* for modification
+    char *password;
+    int wins;
+    int totalScore;
+    int playedGames;
+    time_t createdAt;
+    time_t updatedAt;
 } User;
 
+
 // Function to get a user by their ID
-User* get_one_by_id(const char *id);
+User* get_one_by_id( bson_oid_t *id);
 
 // Function to get a user by their username
 User* get_one_by_username(const char *username);
 
 // Function to check if a user with the given ID exists
-bool persists_by_id(const char *id);
+bool persists_by_id(const bson_oid_t *id);
 
 // Function to check if a user with the given username exists
 bool persists_by_username(const char *username);
@@ -30,8 +33,9 @@ bool persists_by_username(const char *username);
 void add_user(const char *username, const char *password);
 
 // Function to update user information (wins, totalScore, playedGames)
-void update_user(const char *id, int wins, int totalScore, int playedGames);
+void update_user(const bson_oid_t *id, int wins, int totalScore, int playedGames);
 
-void delete_user(const char *id);
+// Function to delete a user by their ID
+void delete_user(const bson_oid_t *id);
 
 #endif // USER_H

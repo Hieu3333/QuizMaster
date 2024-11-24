@@ -5,7 +5,7 @@
 #include <json-c/json.h>
 #include "auth.h"
 #include "mongodb_connect.h"
-
+#include <time.h>
 #define PORT "3000"
 
 // Utility to send JSON response
@@ -47,8 +47,13 @@ void handle_register(struct mg_connection *c, struct mg_http_message *hm) {
     const char *password = json_object_get_string(password_obj);
 
     // Check registration logic
+    bson_oid_t new_user_id;
     if (register_user(username, password)) {
-        send_json_response(c, 201, "{\"message\": \"User created successfully\"}");
+ 
+        char response[256];
+        snprintf(response, sizeof(response), "{\"message\": \"User created successfully\"}");
+
+        send_json_response(c, 201, response);
     } else {
         send_json_response(c, 400, "{\"error\": \"User with this username already exists\"}");
     }
@@ -56,7 +61,17 @@ void handle_register(struct mg_connection *c, struct mg_http_message *hm) {
     json_object_put(parsed_json);  // Free parsed JSON object
 }
 
-// Handle the /api/auth/login endpoint
+// Helper function to format time_t to ISO 8601 format with millisecond precision
+void format_time_iso8601(time_t time_val, char *buffer, size_t buffer_size) {
+    struct tm *tm_info = gmtime(&time_val); // Use gmtime for UTC time
+    strftime(buffer, buffer_size, "%Y-%m-%dT%H:%M:%S", tm_info);
+    int milliseconds = (int)(time_val % 1000); // Assuming time_val has millisecond precision
+
+    // Add milliseconds and UTC timezone indicator
+    snprintf(buffer + strlen(buffer), buffer_size - strlen(buffer), ".%03dZ", milliseconds);
+}
+
+// handle_login function
 void handle_login(struct mg_connection *c, struct mg_http_message *hm) {
     // Convert the mg_str body to a C string
     char *body = mg_str_to_cstr(hm->body);
@@ -82,10 +97,33 @@ void handle_login(struct mg_connection *c, struct mg_http_message *hm) {
 
     // Handle login logic
     User *user = login(username, password);
+
     if (user != NULL) {
-        // User successfully logged in
-        char user_json[512];
-        snprintf(user_json, sizeof(user_json), "{\"id\": \"%s\", \"username\": \"%s\"}", user->id, user->username);
+        // Convert BSON ObjectId to string
+        char id_str[25];
+        bson_oid_to_string(&user->id, id_str);
+
+        // Format timestamps to ISO 8601
+        char created_at_iso[30], updated_at_iso[30];
+        format_time_iso8601(user->createdAt, created_at_iso, sizeof(created_at_iso));
+        format_time_iso8601(user->updatedAt, updated_at_iso, sizeof(updated_at_iso));
+
+        // Prepare JSON response with all user fields
+        char user_json[1024];
+        snprintf(user_json, sizeof(user_json),
+                 "{"
+                 "\"id\": \"%s\", "
+                 "\"username\": \"%s\", "
+                 "\"password\": \"%s\", "  // Consider removing password in production
+                 "\"wins\": %d, "
+                 "\"totalScore\": %d, "
+                 "\"playedGames\": %d, "
+                 "\"createdAt\": \"%s\", "
+                 "\"updatedAt\": \"%s\""
+                 "}",
+                 id_str, user->username, user->password,
+                 user->wins, user->totalScore, user->playedGames,
+                 created_at_iso, updated_at_iso);
 
         send_json_response(c, 200, user_json);
         free(user);  // Free the user after sending response
@@ -114,7 +152,6 @@ void handle_request(struct mg_connection *c, int ev, void *ev_data, void *fn_dat
         }
     }
 }
-
 
 int main() {
     struct mg_mgr mgr;
