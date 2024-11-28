@@ -6,6 +6,7 @@
 #include <time.h>
 #include <mongoc/mongoc.h>
 #include <json-c/json.h>
+#include <bson/bson.h>/
 
 // Helper function to create a User object from a JSON object
 User* json_to_user(const json_object *obj) {
@@ -199,6 +200,124 @@ User* get_one_by_username(const char *username) {
 
     return NULL;
 }
+
+#include <mongoc/mongoc.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+// Function to get the leaderboard with a given quantity (number of users)
+// Function to get the leaderboard with a given quantity (number of users)
+User* get_leaderboard(int quantity, int* result_size) {
+    mongoc_client_t *client = get_mongo_client();
+    mongoc_collection_t *collection = mongoc_client_get_collection(client, "quizmaster", "User");
+
+    // Create a query (no specific query, just get all users)
+    bson_t *query = bson_new();
+    if (!query) {
+        fprintf(stderr, "Failed to create query BSON document\n");
+        return NULL;
+    }
+
+    // Create options BSON for sorting by totalScore in descending order and limiting the result to `quantity` users
+    bson_t *opts = bson_new();
+    if (!opts) {
+        fprintf(stderr, "Failed to create options BSON document\n");
+        bson_destroy(query);
+        return NULL;
+    }
+
+    BSON_APPEND_INT32(opts, "limit", quantity);  // Limit the result to `quantity` users
+    BSON_APPEND_DOCUMENT(opts, "sort", BCON_NEW("totalScore", BCON_INT32(-1)));  // Sort by totalScore in descending order
+
+    // Get the users sorted by totalScore with the given limit
+    mongoc_cursor_t *cursor = mongoc_collection_find_with_opts(collection, query, opts, NULL);
+    if (!cursor) {
+        fprintf(stderr, "Failed to create cursor\n");
+        bson_destroy(query);
+        bson_destroy(opts);
+        return NULL;
+    }
+
+    const bson_t *doc = NULL;
+
+    // Allocate memory for storing users (check if memory allocation is successful)
+    User* leaderboard = malloc(sizeof(User) * quantity);
+    if (!leaderboard) {
+        fprintf(stderr, "Memory allocation failed for leaderboard\n");
+        bson_destroy(query);
+        bson_destroy(opts);
+        mongoc_cursor_destroy(cursor);
+        return NULL;
+    }
+
+    *result_size = 0;  // To track how many users are found
+
+    // Iterate over the cursor and extract users
+    while (mongoc_cursor_next(cursor, &doc)) {
+        bson_iter_t iter;
+        User* user = &leaderboard[*result_size];
+
+        // Extract fields directly from BSON document
+        if (bson_iter_init_find(&iter, doc, "_id")) {
+            bson_oid_copy(bson_iter_oid(&iter), &user->id);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "username")) {
+            user->username = strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "password")) {
+            user->password = strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "wins")) {
+            user->wins = bson_iter_int32(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "totalScore")) {
+            user->totalScore = bson_iter_int32(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "playedGames")) {
+            user->playedGames = bson_iter_int32(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "createdAt")) {
+            user->createdAt = bson_iter_int64(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "updatedAt")) {
+            user->updatedAt = bson_iter_int64(&iter);
+        }
+
+        (*result_size)++;  // Increment the number of users found
+
+        // Stop if we've reached the desired quantity
+        if (*result_size >= quantity) {
+            break;
+        }
+    }
+
+    // If no users found, return NULL
+    if (*result_size == 0) {
+        free(leaderboard);
+        bson_destroy(query);
+        bson_destroy(opts);
+        mongoc_cursor_destroy(cursor);
+        return NULL;
+    }
+
+    // Cleanup resources
+    bson_destroy(query);
+    bson_destroy(opts);
+    mongoc_cursor_destroy(cursor);
+    mongoc_collection_destroy(collection);
+
+    return leaderboard;
+}
+
+
+
 
 
 // Function to check if a user with the given ID exists
