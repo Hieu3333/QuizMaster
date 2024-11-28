@@ -10,19 +10,50 @@
 #define PORT 3000
 #define BUFFER_SIZE 4096
 
+// Helper function to format time_t to ISO 8601 format with millisecond precision
+void format_time_iso8601(time_t time_val, char *buffer, size_t buffer_size) {
+    struct tm *tm_info = gmtime(&time_val); // Use gmtime for UTC time
+    strftime(buffer, buffer_size, "%Y-%m-%dT%H:%M:%S", tm_info);
+    int milliseconds = (int)(time_val % 1000); // Assuming time_val has millisecond precision
+
+    // Add milliseconds and UTC timezone indicator
+    snprintf(buffer + strlen(buffer), buffer_size - strlen(buffer), ".%03dZ", milliseconds);
+}
+
 // Utility to send a raw HTTP response
 void send_http_response(int client_sock, int status_code, const char *status_text, const char *content_type, const char *body) {
     char response[BUFFER_SIZE];
+    const char *response_body = body ? body : "";
+    size_t content_length = body ? strlen(body) : 0;
+
+    // Handle OPTIONS request (No Content)
+    if (status_code == 204) {
+        snprintf(response, sizeof(response),
+                 "HTTP/1.1 204 No Content\r\n"
+                 "Access-Control-Allow-Origin: *\r\n"
+                 "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                 "Access-Control-Allow-Headers: Content-Type\r\n"
+                 "Content-Length: 0\r\n"
+                 "\r\n");
+        send(client_sock, response, strlen(response), 0);
+        return;
+    }
+
+    // General HTTP response
     snprintf(response, sizeof(response),
              "HTTP/1.1 %d %s\r\n"
              "Content-Type: %s\r\n"
              "Content-Length: %zu\r\n"
+             "Access-Control-Allow-Origin: *\r\n"
+             "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+             "Access-Control-Allow-Headers: Content-Type\r\n"
              "\r\n"
              "%s",
-             status_code, status_text, content_type, strlen(body), body);
+             status_code, status_text, content_type, content_length, response_body);
 
     send(client_sock, response, strlen(response), 0);
 }
+
 
 // Helper function to extract the request body from raw HTTP request
 char* extract_body(const char *request) {
@@ -53,8 +84,10 @@ void handle_register(int client_sock, const char *body) {
     // Check registration logic
     if (register_user(username, password)) {
         send_http_response(client_sock, 201, "Created", "application/json", "{\"message\": \"User created successfully\"}");
+        printf("200 GET /api/auth/register");
     } else {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"User with this username already exists\"}");
+        printf("400 GET /api/auth/register error");
     }
 
     json_object_put(parsed_json);  // Free parsed JSON object
@@ -84,22 +117,35 @@ void handle_login(int client_sock, const char *body) {
         char id_str[25];
         bson_oid_to_string(&user->id, id_str);
 
+        char created_at_iso[30], updated_at_iso[30];
+        format_time_iso8601(user->createdAt, created_at_iso, sizeof(created_at_iso));
+        format_time_iso8601(user->updatedAt, updated_at_iso, sizeof(updated_at_iso));
+
+        char user_json[1024];
+
         // Prepare JSON response
         char response[1024];
-        snprintf(response, sizeof(response),
+        snprintf(user_json, sizeof(user_json),
                  "{"
                  "\"id\": \"%s\", "
                  "\"username\": \"%s\", "
+                 "\"password\": \"%s\", "  // Consider removing password in production
                  "\"wins\": %d, "
                  "\"totalScore\": %d, "
-                 "\"playedGames\": %d"
+                 "\"playedGames\": %d, "
+                 "\"createdAt\": \"%s\", "
+                 "\"updatedAt\": \"%s\""
                  "}",
-                 id_str, user->username, user->wins, user->totalScore, user->playedGames);
+                 id_str, user->username, user->password,
+                 user->wins, user->totalScore, user->playedGames,
+                 created_at_iso, updated_at_iso);
 
-        send_http_response(client_sock, 200, "OK", "application/json", response);
+        send_http_response(client_sock, 200, "OK", "application/json", user_json);
+        printf("200 GET /api/auth/login");
         free(user);  // Free the user object
     } else {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid username or password\"}");
+        printf("400 GET /api/auth/login");
     }
 
     json_object_put(parsed_json);  // Free parsed JSON object
@@ -115,6 +161,7 @@ void handle_leaderboard(int client_sock, const char *quantity_str) {
     int quantity = atoi(quantity_str);
     if (quantity <= 0) {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid quantity \"}");
+        printf("400 GET /api/users/leaderboard error");
         return;
     }
 
@@ -124,6 +171,7 @@ void handle_leaderboard(int client_sock, const char *quantity_str) {
 
     if (leaderboard == NULL || result_size == 0) {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid quantity\"}");
+        printf("400 GET /api/users/leaderboard error");
         return;
     }
 
@@ -166,6 +214,7 @@ void handle_leaderboard(int client_sock, const char *quantity_str) {
 
     // Send the HTTP response with the leaderboard
     send_http_response(client_sock, 200, "OK", "application/json", response);
+    printf("200 GET /api/users/leaderboard ");
 
     // Free the leaderboard memory
     free(leaderboard);
@@ -180,19 +229,30 @@ void handle_get_user_by_id(int client_sock, const char *id_str) {
         char user_id_str[25];
         bson_oid_to_string(&user->id, user_id_str);
 
+        char created_at_iso[30], updated_at_iso[30];
+        format_time_iso8601(user->createdAt, created_at_iso, sizeof(created_at_iso));
+        format_time_iso8601(user->updatedAt, updated_at_iso, sizeof(updated_at_iso));
+
+        char user_json[1024];
+
         // Prepare JSON response
         char response[1024];
-        snprintf(response, sizeof(response),
+        snprintf(user_json, sizeof(user_json),
                  "{"
                  "\"id\": \"%s\", "
                  "\"username\": \"%s\", "
+                 "\"password\": \"%s\", "  // Consider removing password in production
                  "\"wins\": %d, "
                  "\"totalScore\": %d, "
-                 "\"playedGames\": %d"
-                 "} ",
-                 user_id_str, user->username, user->wins, user->totalScore, user->playedGames);
+                 "\"playedGames\": %d, "
+                 "\"createdAt\": \"%s\", "
+                 "\"updatedAt\": \"%s\""
+                 "}",
+                 id_str, user->username, user->password,
+                 user->wins, user->totalScore, user->playedGames,
+                 created_at_iso, updated_at_iso);
 
-        send_http_response(client_sock, 200, "OK", "application/json", response);
+        send_http_response(client_sock, 200, "OK", "application/json", user_json);
 
         // Free the user object
         free(user->username);
