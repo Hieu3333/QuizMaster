@@ -4,11 +4,21 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <json-c/json.h>
+#include <pthread.h>
 #include "auth.h"
 #include "mongodb_connect.h"
+#include "gameplay.h"
 
 #define PORT 3000
 #define BUFFER_SIZE 4096
+
+#define MAX_PLAYERS 4
+#define MAX_ROOMS 100
+#define MAX_QUESTIONS 7
+
+Room rooms[MAX_ROOMS];
+int room_count = 0;
+
 
 // Helper function to format time_t to ISO 8601 format with millisecond precision
 void format_time_iso8601(time_t time_val, char *buffer, size_t buffer_size) {
@@ -32,7 +42,8 @@ void send_http_response(int client_sock, int status_code, const char *status_tex
                  "HTTP/1.1 204 No Content\r\n"
                  "Access-Control-Allow-Origin: *\r\n"
                  "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-                 "Access-Control-Allow-Headers: Content-Type\r\n"
+                 "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
+                 "Access-Control-Max-Age: 86400\r\n"
                  "Content-Length: 0\r\n"
                  "\r\n");
         send(client_sock, response, strlen(response), 0);
@@ -46,7 +57,7 @@ void send_http_response(int client_sock, int status_code, const char *status_tex
              "Content-Length: %zu\r\n"
              "Access-Control-Allow-Origin: *\r\n"
              "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
-             "Access-Control-Allow-Headers: Content-Type\r\n"
+             "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
              "\r\n"
              "%s",
              status_code, status_text, content_type, content_length, response_body);
@@ -145,7 +156,7 @@ void handle_login(int client_sock, const char *body) {
         free(user);  // Free the user object
     } else {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid username or password\"}");
-        printf("400 GET /api/auth/login");
+        printf("400 GET /api/auth/login\n");
     }
 
     json_object_put(parsed_json);  // Free parsed JSON object
@@ -161,7 +172,7 @@ void handle_leaderboard(int client_sock, const char *quantity_str) {
     int quantity = atoi(quantity_str);
     if (quantity <= 0) {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid quantity \"}");
-        printf("400 GET /api/users/leaderboard error");
+        printf("400 GET /api/users/leaderboard error\n");
         return;
     }
 
@@ -171,7 +182,7 @@ void handle_leaderboard(int client_sock, const char *quantity_str) {
 
     if (leaderboard == NULL || result_size == 0) {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid quantity\"}");
-        printf("400 GET /api/users/leaderboard error");
+        printf("400 GET /api/users/leaderboard error\n");
         return;
     }
 
@@ -214,7 +225,7 @@ void handle_leaderboard(int client_sock, const char *quantity_str) {
 
     // Send the HTTP response with the leaderboard
     send_http_response(client_sock, 200, "OK", "application/json", response);
-    printf("200 GET /api/users/leaderboard ");
+    printf("200 GET /api/users/leaderboard\n ");
 
     // Free the leaderboard memory
     free(leaderboard);
@@ -321,6 +332,12 @@ void handle_client(int client_sock) {
 
     // Extract the body from the request
     char *body = extract_body(buffer);
+    // Handle OPTIONS preflight request
+    if (strcmp(method, "OPTIONS") == 0) {
+        send_http_response(client_sock, 204, "No Content", NULL, NULL); // CORS headers are added in send_http_response
+        close(client_sock);
+        return;
+    }
 
     // Route the request based on the path
     if (strcmp(path, "/api/auth/register") == 0 && strcmp(method, "POST") == 0) {

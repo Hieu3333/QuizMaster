@@ -40,6 +40,7 @@ export const fetchUser = async (id: string) => {
 export const fetchLeaderboard = async (amount: number) => {
   try {
     const res = await api.get<User[]>(`/users/leaderboard/${amount}`);
+    console.log(res.data);
     return res.data;
   } catch (error) {
     throw new Error('Failed to fetch leaderboard.');
