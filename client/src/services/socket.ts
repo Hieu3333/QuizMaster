@@ -1,7 +1,18 @@
-import { io, Socket } from 'socket.io-client';
-import { ClientToServerEvents, ServerToClientEvents } from '../types/Socket';
+const socket = new WebSocket('ws://localhost:5000'); // Use your WebSocket server URL
 
-// please note that the types are reversed
-export const socket: Socket<ServerToClientEvents, ClientToServerEvents> = io(
-  'http://localhost:3000'
-);
+socket.onopen = () => {
+  console.log('Connected to the WebSocket server');
+  socket.send('Hello from frontend!');
+};
+
+socket.onclose = () => {
+  console.log('WebSocket connection closed');
+};
+
+socket.onerror = (error) => {
+  console.error('WebSocket Error:', error);
+};
+
+
+
+export { socket };

@@ -1,138 +1,101 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <netinet/in.h>
-#include <pthread.h>
-#include "gameplay.h"
+#include <stdlib.h>
+#include <libwebsockets.h>
 
-Room rooms[MAX_ROOMS];
-int room_count = 0;
-int current_question_index = 0;
-Question questions[7];  // You can have a fixed number of questions or fetch dynamically
+#define PORT 5000  // WebSocket server port
 
-// Utility functions
-void init_room(Room *room, int id) {
-    room->id = id;
-    room->num_players = 0;
-    room->is_ongoing = 0;
-    memset(room->scores, 0, sizeof(room->scores));
-    memset(room->votes, 0, sizeof(room->votes));
-}
+// This structure stores per-session data for each client connection
+struct per_session_data__echo {
+    int dummy;  // Placeholder for any session-specific data
+};
 
-void send_to_client(int client_socket, const char *message) {
-    send(client_socket, message, strlen(message), 0);
-}
+// Callback function that handles WebSocket events
+static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
+    switch (reason) {
+        case LWS_CALLBACK_SERVER_WRITEABLE: {
+            // Prepare a message to send to the client
+            const char *msg = "Hello from the WebSocket server!";
+            size_t msg_len = strlen(msg);
 
-void *handle_player(void *arg);
+            // Write the message to the WebSocket
+            unsigned char *buf = (unsigned char *) malloc(LWS_PRE + msg_len);
+            memcpy(buf + LWS_PRE, msg, msg_len);
 
-// Server functions
-void start_game(int room_id) {
-    Room *room = &rooms[room_id];
-    if (room->num_players < 4) return;
-    
-    // Begin the voting process (assuming 1 category for simplicity)
-    send_to_client(room->players[0].id, "Voting started...");
+            // Send the message
+            int n = lws_write(wsi, buf + LWS_PRE, msg_len, LWS_WRITE_TEXT);
+            free(buf);
 
-    // Wait for all players to vote
-    if (room->num_players == 4) {
-        // Simulate voting, pick a winner
-        int winner = rand() % 4; // Randomly pick a winner for this example
-        send_to_client(room->players[winner].id, "You won the vote!");
-
-        // Start the game with the selected category
-        room->is_ongoing = 1;
-        send_to_client(room->players[0].id, "Game started!");
-    }
-}
-
-void join_room(int client_socket, Player player) {
-    int joined = 0;
-    for (int i = 0; i < room_count; i++) {
-        if (rooms[i].num_players < MAX_PLAYERS) {
-            rooms[i].players[rooms[i].num_players] = player;
-            rooms[i].num_players++;
-            send_to_client(client_socket, "Joined room successfully!");
-            joined = 1;
-            if (rooms[i].num_players == MAX_PLAYERS) {
-                start_game(i);
+            if (n < 0) {
+                printf("Error writing to WebSocket!\n");
+                return -1;
             }
             break;
         }
-    }
-    if (!joined) {
-        if (room_count < MAX_ROOMS) {
-            Room new_room;
-            init_room(&new_room, room_count);
-            new_room.players[0] = player;
-            new_room.num_players = 1;
-            rooms[room_count] = new_room;
-            room_count++;
-            send_to_client(client_socket, "New room created and you joined!");
-        } else {
-            send_to_client(client_socket, "No available rooms.");
-        }
-    }
-}
 
-// Socket communication
-int setup_server_socket(int port) {
-    int server_socket;
-    struct sockaddr_in server_addr;
-
-    server_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_socket == -1) {
-        perror("Socket creation failed");
-        exit(1);
-    }
-
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(port);
-
-    if (bind(server_socket, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
-        perror("Bind failed");
-        exit(1);
-    }
-
-    if (listen(server_socket, 10) == -1) {
-        perror("Listen failed");
-        exit(1);
-    }
-
-    return server_socket;
-}
-
-// Main game loop
-void *handle_player(void *arg) {
-    int client_socket = *((int *)arg);
-    Player player;
-    char buffer[BUFFER_SIZE];
-
-    recv(client_socket, buffer, sizeof(buffer), 0);  // Receive player name
-    strcpy(player.name, buffer);
-    player.id = client_socket;
-
-    join_room(client_socket, player);
-
-    while (1) {
-        // Handle voting or answering
-        memset(buffer, 0, sizeof(buffer));
-        int recv_size = recv(client_socket, buffer, sizeof(buffer), 0);
-        if (recv_size <= 0) {
-            close(client_socket);
+        case LWS_CALLBACK_ESTABLISHED: {
+            printf("New client connected!\n");
             break;
         }
 
-        // Process the message (e.g., vote, answer)
-        if (strcmp(buffer, "vote") == 0) {
-            // Handle voting logic
-            send_to_client(client_socket, "Your vote was recorded.");
-        } else if (strcmp(buffer, "answer") == 0) {
-            // Handle answering logic
-            send_to_client(client_socket, "Answer recorded.");
+        case LWS_CALLBACK_RECEIVE: {
+            // Print the message received from the client
+            printf("Received message: %s\n", (char *) in);
+
+            // Respond with a message (for example, echoing the received message)
+            const char *response = "Message received!";
+            
+            // Allocate buffer to send back response to client
+            lws_write(wsi, (unsigned char *) response, strlen(response), LWS_WRITE_TEXT);
+            break;
         }
+
+        case LWS_CALLBACK_CLOSED: {
+            printf("Client disconnected!\n");
+            break;
+        }
+
+        default:
+            break;
+    }
+    return 0;
+}
+
+// Protocols array, used to configure the WebSocket server
+static struct lws_protocols protocols[] = {
+    {
+        "ws-only",  // WebSocket protocol name
+        callback_websocket,  // Callback function for handling events
+        sizeof(struct per_session_data__echo),  // Size of per-session data
+        1024,  // Maximum message size
+    },
+    { NULL, NULL, 0, 0 }  // Terminating entry
+};
+
+int main() {
+    // WebSocket server info configuration
+    struct lws_context_creation_info info;
+    memset(&info, 0, sizeof(info));
+    info.port = PORT;  // The port the WebSocket server will listen on
+    info.protocols = protocols;
+    info.gid = -1;
+    info.uid = -1;
+
+    // Create the WebSocket server context
+    struct lws_context *context = lws_create_context(&info);
+    if (!context) {
+        printf("Error creating WebSocket server context!\n");
+        return -1;
     }
 
-    return NULL;
+    // Main server loop
+    printf("WebSocket server listening on ws://localhost:%d\n", PORT);
+    while (1) {
+        // Handle WebSocket events
+        lws_service(context, 1000);
+    }
+
+    // Cleanup and shutdown
+    lws_context_destroy(context);
+    return 0;
 }

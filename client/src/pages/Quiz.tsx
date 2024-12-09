@@ -11,9 +11,7 @@ import { Question } from '../types/Question';
 import { updateUser } from '../services/requests';
 
 export const Quiz: FC = () => {
-  const [quizState, setQuizState] = useState<
-    'waiting' | 'voting' | 'playing' | 'end'
-  >('waiting');
+  const [quizState, setQuizState] = useState<'waiting' | 'voting' | 'playing' | 'end'>('waiting');
   const [players, setPlayers] = useState<User[]>([]);
   const [winner, setWinner] = useState<User>();
   const [categories, setCategories] = useState<Record<number, string>>([]);
@@ -27,40 +25,50 @@ export const Quiz: FC = () => {
     const roomPlayers = location.state.roomPlayers as User[];
     setPlayers(roomPlayers);
 
-    socket.on('joinRoom', ({ roomPlayers }) => {
-      setPlayers(roomPlayers);
-    });
+    // Listening to messages from the WebSocket server
+    socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      
+      switch (message.type) {
+        case 'joinRoom':
+          setPlayers(message.data.roomPlayers);
+          break;
 
-    socket.on('startVoting', (categories) => {
-      setQuizState('voting');
-      setCategories(categories);
-    });
+        case 'startVoting':
+          setQuizState('voting');
+          setCategories(message.data.categories);
+          break;
 
-    socket.on('startMatch', ({ category, firstQuestion }) => {
-      setQuizState('playing');
-      setCategory(category);
-      setFirstQuestion(firstQuestion);
-    });
+        case 'startMatch':
+          setQuizState('playing');
+          setCategory(message.data.category);
+          setFirstQuestion(message.data.firstQuestion);
+          break;
+
+        case 'gameOver':
+          setWinner(players.find((player) => player.id === message.data.winnerId));
+          setQuizState('end');
+          break;
+
+        default:
+          console.log('Unknown message type', message.type);
+      }
+    };
 
     return () => {
-      socket.off('joinRoom');
-      socket.off('startVoting');
-      socket.off('startMatch');
+      socket.onmessage = null; // Clean up on unmount
     };
-  }, []);
+  }, [players, location.state.roomPlayers]);
 
   useEffect(() => {
-    socket.on('gameOver', async (winnerId) => {
-      setWinner(players.find((player) => player.id === winnerId));
-      setQuizState('end');
-
-      if (user?.id === winnerId) {
+    // Handle game over and update the user stats
+    if (quizState === 'end' && winner) {
+      if (user?.id === winner.id) {
         update({
           id: user?.id as string,
           wins: (user?.wins as number) + 1,
         });
-
-        await updateUser(user?.id as string, {
+        updateUser(user?.id as string, {
           id: user?.id as string,
           wins: (user?.wins as number) + 1,
         });
@@ -71,16 +79,17 @@ export const Quiz: FC = () => {
         playedGames: (user?.playedGames as number) + 1,
       });
 
-      await updateUser(user?.id as string, {
+      updateUser(user?.id as string, {
         id: user?.id as string,
         playedGames: (user?.playedGames as number) + 1,
       });
-    });
+    }
+  }, [quizState, winner]);
 
-    return () => {
-      socket.off('gameOver');
-    };
-  }, [players]);
+  // Function to send messages to the WebSocket server
+  const sendMessage = (type: string, data: any) => {
+    socket.send(JSON.stringify({ type, data }));
+  };
 
   return (
     <div className='absolute inset-0 flex items-center justify-center px-8'>

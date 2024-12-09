@@ -367,50 +367,50 @@ void handle_client(int client_sock) {
 }
 
 
-int main() {
-    // Initialize MongoDB connection
-    init_mongo();
+// int main() {
+//     // Initialize MongoDB connection
+//     init_mongo();
 
-    // Create a socket
-    int server_sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_sock < 0) {
-        perror("Socket creation failed");
-        exit(EXIT_FAILURE);
-    }
+//     // Create a socket
+//     int server_sock = socket(AF_INET, SOCK_STREAM, 0);
+//     if (server_sock < 0) {
+//         perror("Socket creation failed");
+//         exit(EXIT_FAILURE);
+//     }
 
-    // Bind the socket to the port
-    struct sockaddr_in server_addr = {0};
-    server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
-    server_addr.sin_port = htons(PORT);
+//     // Bind the socket to the port
+//     struct sockaddr_in server_addr = {0};
+//     server_addr.sin_family = AF_INET;
+//     server_addr.sin_addr.s_addr = INADDR_ANY;
+//     server_addr.sin_port = htons(PORT);
 
-    if (bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-        perror("Bind failed");
-        close(server_sock);
-        exit(EXIT_FAILURE);
-    }
+//     if (bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+//         perror("Bind failed");
+//         close(server_sock);
+//         exit(EXIT_FAILURE);
+//     }
 
-    // Listen for incoming connections
-    if (listen(server_sock, 5) < 0) {
-        perror("Listen failed");
-        close(server_sock);
-        exit(EXIT_FAILURE);
-    }
+//     // Listen for incoming connections
+//     if (listen(server_sock, 5) < 0) {
+//         perror("Listen failed");
+//         close(server_sock);
+//         exit(EXIT_FAILURE);
+//     }
 
-    printf("Server listening on port %d...\n", PORT);
+//     printf("Server listening on port %d...\n", PORT);
 
-    // Accept and handle incoming connections
-    while (1) {
-        int client_sock = accept(server_sock, NULL, NULL);
-        if (client_sock < 0) {
-            perror("Accept failed");
-            continue;
-        }
-        handle_client(client_sock);
-    }
+//     // Accept and handle incoming connections
+//     while (1) {
+//         int client_sock = accept(server_sock, NULL, NULL);
+//         if (client_sock < 0) {
+//             perror("Accept failed");
+//             continue;
+//         }
+//         handle_client(client_sock);
+//     }
 
-    // Clean up
-    close(server_sock);
-    cleanup_mongo();
-    return 0;
-}
+//     // Clean up
+//     close(server_sock);
+//     cleanup_mongo();
+//     return 0;
+// }

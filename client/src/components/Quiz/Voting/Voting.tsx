@@ -1,6 +1,6 @@
 import { FC, useEffect, useState } from 'react';
 import { Category } from './Category';
-import { socket } from '../../../services/socket';
+import { socket } from '../../../services/socket'; // Update to use WebSocket service
 import { useAuth } from '../../../hooks/useAuth';
 
 interface VotingProps {
@@ -13,11 +13,34 @@ export const Voting: FC<VotingProps> = ({ categories }) => {
 
   useEffect(() => {
     document.title = 'QuizMaster | Voting';
-  }, []);
+
+    // Listen for vote result updates via WebSocket
+    socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'voteResult') {
+        const { playerId } = message.data;
+        if (playerId === user?.id) {
+          setHasVoted(true); // Mark that the user has voted after receiving confirmation
+        }
+      }
+    };
+
+    return () => {
+      socket.onmessage = null; // Cleanup the WebSocket message handler when the component unmounts
+    };
+  }, [user?.id]);
 
   const handleVote = (key: string) => {
-    socket.emit('vote', { category: key, playerId: user?.id as string });
-    setHasVoted(true);
+    if (hasVoted) return; // Prevent voting again if already voted
+
+    // Send the vote via WebSocket
+    socket.send(
+      JSON.stringify({
+        type: 'vote',
+        data: { category: key, playerId: user?.id as string },
+      })
+    );
+    setHasVoted(true); // Optimistically set the state to reflect the vote
   };
 
   return (

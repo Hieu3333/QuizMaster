@@ -1,7 +1,7 @@
 import { FC, useEffect, useState } from 'react';
 import { useAuth } from '../../../hooks/useAuth';
 import { updateUser } from '../../../services/requests';
-import { socket } from '../../../services/socket';
+import { socket } from '../../../services/socket';  // Update import for WebSocket connection
 import { Question } from '../../../types/Question';
 import { User } from '../../../types/User';
 import { Answers } from './Answers';
@@ -23,74 +23,85 @@ export const Match: FC<MatchProps> = ({
   const { user, update } = useAuth();
   const [hasAnswered, setHasAnswered] = useState<boolean>(false);
   const [updatedUser, setUpdatedUser] = useState<User>(user as User);
-  const [currentQuestion, setCurrentQuestion] =
-    useState<Question>(firstQuestion);
+  const [currentQuestion, setCurrentQuestion] = useState<Question>(firstQuestion);
   const [hints, setHints] = useState<string[]>([]);
 
   useEffect(() => {
     document.title = `QuizMaster | ${category}`;
 
-    socket.on('answerResult', async ({ isCorrect, playerId, answer }) => {
-      if (isCorrect && playerId === user?.id) {
-        update({
-          id: user?.id as string,
-          totalScore: (updatedUser?.totalScore as number) + 1,
+    // WebSocket event listener for answer results
+    socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === 'answerResult') {
+        const { isCorrect, playerId, answer } = message.data;
+
+        if (isCorrect && playerId === user?.id) {
+          update({
+            id: user?.id as string,
+            totalScore: (updatedUser?.totalScore as number) + 1,
+          });
+
+          updateUser(user?.id as string, {
+            id: user?.id as string,
+            totalScore: (updatedUser?.totalScore as number) + 1,
+          });
+
+          setUpdatedUser((prevUser) => ({
+            ...prevUser,
+            totalScore: (prevUser?.totalScore as number) + 1,
+          }));
+        }
+
+        setHints((prevHints) => {
+          const { username } = players.find(
+            (player) => player.id === playerId
+          ) as User;
+          const newHint =
+            username +
+            ' answered "' +
+            answer +
+            '" and was ' +
+            (isCorrect ? 'correct' : 'wrong') +
+            '.';
+          if (!prevHints.includes(newHint)) prevHints?.push(newHint);
+          return prevHints;
         });
 
-        await updateUser(user?.id as string, {
-          id: user?.id as string,
-          totalScore: (updatedUser?.totalScore as number) + 1,
-        });
-
-        setUpdatedUser((prevUser) => ({
-          ...prevUser,
-          totalScore: (prevUser?.totalScore as number) + 1,
-        }));
+        setPlayers((prevPlayers) =>
+          prevPlayers.map((player) => {
+            if (player.id === playerId) {
+              return {
+                ...player,
+                score: isCorrect ? (player.score as number) + 1 : player.score,
+              };
+            }
+            return player;
+          })
+        );
       }
 
-      setHints((prevHints) => {
-        const { username } = players.find(
-          (player) => player.id === playerId
-        ) as User;
-        const newHint =
-          username +
-          ' answered "' +
-          answer +
-          '" and was ' +
-          (isCorrect ? 'correct' : 'wrong') +
-          '.';
-        if (!prevHints.includes(newHint)) prevHints?.push(newHint);
-        return prevHints;
-      });
-
-      setPlayers((prevPlayers) =>
-        prevPlayers.map((player) => {
-          if (player.id === playerId) {
-            return {
-              ...player,
-              score: isCorrect ? (player.score as number) + 1 : player.score,
-            };
-          }
-          return player;
-        })
-      );
-    });
-
-    socket.on('nextQuestion', (question) => {
-      setCurrentQuestion(question);
-      setHints([]);
-      setHasAnswered(false);
-    });
+      if (message.type === 'nextQuestion') {
+        setCurrentQuestion(message.data);
+        setHints([]);
+        setHasAnswered(false);
+      }
+    };
 
     return () => {
-      socket.off('nextQuestion');
-      socket.off('answerResult');
+      socket.onmessage = null; // Clean up on unmount
     };
-  }, [updatedUser]);
+  }, [updatedUser, user?.id, players]);
 
   const handleAnswer = (answer: string) => {
     if (hasAnswered) return;
-    socket.emit('answer', { answer, playerId: user?.id as string });
+
+    // Sending the answer to the WebSocket server
+    socket.send(
+      JSON.stringify({
+        type: 'answer',
+        data: { answer, playerId: user?.id as string },
+      })
+    );
     setHasAnswered(true);
   };
 

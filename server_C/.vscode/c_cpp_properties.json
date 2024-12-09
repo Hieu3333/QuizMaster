@@ -18,7 +18,8 @@
                 "path": [
                     "${workspaceFolder}",
                     "/usr/local/include/libmongoc-1.0",
-                    "/usr/local/include/libbson-1.0"
+                    "/usr/local/include/libbson-1.0",
+                    "/usr/include/libwebsockets"
                 ],
                 "limitSymbolsToIncludedHeaders": true
             }
