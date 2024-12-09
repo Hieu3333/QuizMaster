@@ -41,7 +41,7 @@ void send_http_response(int client_sock, int status_code, const char *status_tex
         snprintf(response, sizeof(response),
                  "HTTP/1.1 204 No Content\r\n"
                  "Access-Control-Allow-Origin: *\r\n"
-                 "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+                 "Access-Control-Allow-Methods: GET, POST, OPTIONS, PATCH\r\n"
                  "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
                  "Access-Control-Max-Age: 86400\r\n"
                  "Content-Length: 0\r\n"
@@ -56,7 +56,7 @@ void send_http_response(int client_sock, int status_code, const char *status_tex
              "Content-Type: %s\r\n"
              "Content-Length: %zu\r\n"
              "Access-Control-Allow-Origin: *\r\n"
-             "Access-Control-Allow-Methods: GET, POST, OPTIONS\r\n"
+             "Access-Control-Allow-Methods: GET, POST, OPTIONS,PATCH\r\n"
              "Access-Control-Allow-Headers: Content-Type, Authorization\r\n"
              "\r\n"
              "%s",
