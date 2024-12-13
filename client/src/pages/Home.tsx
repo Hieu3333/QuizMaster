@@ -57,7 +57,7 @@ export const Home = () => {
     if (user) {
       // Send the user data as a stringified JSON object
       const message = JSON.stringify({
-        type: 'findMatch',
+        action: 'findMatch',
         data: user,
       });
 

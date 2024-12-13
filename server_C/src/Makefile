@@ -4,7 +4,7 @@ LIBS = -lwebsockets -ljson-c -lmongoc-1.0 -lbson-1.0 -L/usr/local/lib # No need 
 
 
 # Source files (added mongoose.c here)
-SRC = auth.c mongodb_connect.c user.c gameplay.c server.c mongoose.c  # Added mongoose.c to the list of sources
+SRC = auth.c mongodb_connect.c user.c gameplay.c server.c mongoose.c gameplay_test.c  # Added mongoose.c to the list of sources
 
 # Object files (convert .c to .o)
 OBJ = $(SRC:.c=.o)

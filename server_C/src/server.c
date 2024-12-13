@@ -12,12 +12,12 @@
 #define PORT 3000
 #define BUFFER_SIZE 4096
 
-#define MAX_PLAYERS 4
-#define MAX_ROOMS 100
-#define MAX_QUESTIONS 7
+// #define MAX_PLAYERS 4
+// #define MAX_ROOMS 100
+// #define MAX_QUESTIONS 7
 
-Room rooms[MAX_ROOMS];
-int room_count = 0;
+// Room rooms[MAX_ROOMS];
+// int room_count = 0;
 
 
 // Helper function to format time_t to ISO 8601 format with millisecond precision
