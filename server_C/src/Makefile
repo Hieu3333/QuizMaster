@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -g -I/usr/local/include/libmongoc-1.0 -I/usr/local/include/libbson-1.0 # Include paths for MongoDB and BSON
-LIBS = -lwebsockets -ljson-c -lmongoc-1.0 -lbson-1.0 -L/usr/local/lib # No need to link mongoose library since it's part of your source files
+LIBS = -ljansson -lwebsockets -ljson-c -lmongoc-1.0 -lbson-1.0 -L/usr/local/lib # No need to link mongoose library since it's part of your source files
 
 
 # Source files (added mongoose.c here)

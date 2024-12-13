@@ -77,13 +77,7 @@ export const Home = () => {
             FIND MATCH
             <MagnifyingGlassIcon className={svgStyle} />
           </button>
-          <button
-            className={btnStyle}
-            onClick={() => setIsPrivateMatchModalOpen(true)}
-          >
-            PRIVATE MATCH
-            <LockClosedIcon className={svgStyle} />
-          </button>
+          
           <Link
             to={`../profile/${user?.id}`}
             className={`${btnStyle} flex items-center justify-center`}
@@ -94,11 +88,6 @@ export const Home = () => {
         </div>
       </div>
 
-      {isPrivateMatchModalOpen && (
-        <PrivateMatchModal
-          setIsPrivateMatchModalOpen={setIsPrivateMatchModalOpen}
-        />
-      )}
     </>
   );
 };

@@ -4,14 +4,6 @@ const socket = new WebSocket('ws://localhost:5000/'); // Use your WebSocket serv
 socket.onopen = () => {
   console.log('Connected to the WebSocket server');
 
-  // Create a JSON object with the desired structure
-  const message = {
-    action: 'greet',  // Action type (can be modified as needed)
-    content: 'Hello from frontend!'  // Additional content
-  };
-
-  // Send the message as a JSON string
-  socket.send(JSON.stringify(message));
 };
 
 // Handle incoming messages
