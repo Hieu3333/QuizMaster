@@ -1,4 +1,4 @@
-const socket = new WebSocket('ws://localhost:5000'); // Use your WebSocket server URL
+const socket = new WebSocket('ws://localhost:5000/'); // Use your WebSocket server URL
 
 socket.onopen = () => {
   console.log('Connected to the WebSocket server');

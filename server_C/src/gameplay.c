@@ -18,8 +18,14 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
             const char *msg = "Hello from the WebSocket server!";
             size_t msg_len = strlen(msg);
 
-            // Write the message to the WebSocket
+            // Allocate buffer with LWS_PRE padding
             unsigned char *buf = (unsigned char *) malloc(LWS_PRE + msg_len);
+            if (!buf) {
+                printf("Memory allocation failed!\n");
+                return -1;
+            }
+
+            // Copy the message into the buffer
             memcpy(buf + LWS_PRE, msg, msg_len);
 
             // Send the message
@@ -40,13 +46,33 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
         case LWS_CALLBACK_RECEIVE: {
             // Print the message received from the client
-            printf("Received message: %s\n", (char *) in);
+            printf("Received message: %.*s\n", (int)len, (char *)in);
 
             // Respond with a message (for example, echoing the received message)
             const char *response = "Message received!";
-            
-            // Allocate buffer to send back response to client
-            lws_write(wsi, (unsigned char *) response, strlen(response), LWS_WRITE_TEXT);
+            size_t resp_len = strlen(response);
+
+            // Allocate buffer with LWS_PRE padding
+            unsigned char *buf = (unsigned char *) malloc(LWS_PRE + resp_len);
+            if (!buf) {
+                printf("Memory allocation failed!\n");
+                return -1;
+            }
+
+            // Copy the response into the buffer
+            memcpy(buf + LWS_PRE, response, resp_len);
+
+            // Send the response
+            int n = lws_write(wsi, buf + LWS_PRE, resp_len, LWS_WRITE_TEXT);
+            free(buf);
+
+            if (n < 0) {
+                printf("Error writing to WebSocket!\n");
+                return -1;
+            }
+
+            // Mark the connection as writeable again if needed
+            lws_callback_on_writable(wsi);
             break;
         }
 
