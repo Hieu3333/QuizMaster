@@ -8,11 +8,20 @@
 #include "gameplay.h"
 
 
-
+const char *categories[] = {
+    [9] = "General Knowledge",
+    [11] = "Films",
+    [12] = "Music",
+    [15] = "Videogames",
+    [22] = "Geography",
+    [23] = "History",
+};
 
 // Global variables
 Room* rooms[MAX_ROOMS];
 int room_count = 0;
+
+
 
 // Helper function to parse ISO8601 datetime string to time_t
 time_t iso8601_to_time(const char *datetime) {
@@ -114,14 +123,14 @@ int find_room_for_user(User *user) {
     // Check if the user is already in a room
     for (int i = 0; i < room_count; i++) {
         for (int j = 0; j < rooms[i]->player_count; j++) {
-            if (bson_oid_compare(&rooms[i]->players[j]->id,&user->id)==0) {
+            if (bson_oid_compare(&rooms[i]->players[j].id,&user->id)==0) {
                 char id_str1[25];  // Buffer to hold the string representation of the BSON Object ID
                 char id_str2[25];
                 bson_oid_to_string(&user->id, id_str1);
-                bson_oid_to_string(&rooms[i]->players[j]->id, id_str2);
+                bson_oid_to_string(&rooms[i]->players[j].id, id_str2);
                 // User is already playing
-                printf("User %s is already in room %d.\n", user->username, rooms[i]->id);
-                printf("ID %s is finding room and ID %s is already in room.\n", id_str1, id_str2);
+                // printf("User %s is already in room %d.\n", user->username, rooms[i]->id);
+                // printf("ID %s is finding room and ID %s is already in room.\n", id_str1, id_str2);
                 return -1;  // User already in a room
             }
         }
@@ -130,7 +139,8 @@ int find_room_for_user(User *user) {
     // Try to add the user to an existing room
     for (int i = 0; i < room_count; i++) {
         if (rooms[i]->player_count < MAX_PLAYERS) {
-            rooms[i]->players[rooms[i]->player_count] = user;
+        
+            rooms[i]->players[rooms[i]->player_count] = *user;
             rooms[i]->player_count++;
             char id_str[25];  // Buffer to hold the string representation of the BSON Object ID
                 bson_oid_to_string(&user->id, id_str);
@@ -149,31 +159,32 @@ int create_new_room(User *user) {
         printf("Error: Cannot create new room, maximum number of rooms reached.\n");
         return -1;  // Error code indicating failure
     }
-    
-    // Allocate memory for the new room
-    rooms[room_count] = (Room *)malloc(sizeof(Room));
-    if (rooms[room_count] == NULL) {
-        printf("Error: Memory allocation failed for the new room.\n");
-        return -1;  // Memory allocation failed
-    }
 
-    Room* new_room = (Room *)malloc(sizeof(Room)); // Allocate memory for the new room
+    // Allocate memory for the new room
+    Room *new_room = (Room *)malloc(sizeof(Room));
     if (new_room == NULL) {
         printf("Error: Memory allocation failed for the new room.\n");
         return -1;  // Memory allocation failed
     }
 
-    // Create a new room and add the user
-    new_room->id = room_count + 1;  // Assign room ID
-    new_room->players[0] = user;    // Add the user to the room
+    // Initialize the new room
+    new_room->id = room_count + 1;   // Assign room ID
+    new_room->players[0] = *user;    // Add the user to the room
     new_room->player_count = 1;      // One player in the room
     new_room->isOngoing = 0;         // Game is not yet started
 
-    rooms[room_count] = new_room;  // Store the new room in the rooms array
+    // Convert BSON Object ID to string
+    char id_str[25];  // Buffer to hold the string representation of the BSON Object ID
+    bson_oid_to_string(&user->id, id_str);
+    printf("User %s joined room %d.\n", user->username, new_room->id);
+
+    // Store the new room in the rooms array
+    rooms[room_count] = new_room;
     room_count++;
 
-    return new_room->id;
+    return new_room->id;  // Return the room ID
 }
+
 
 // This structure stores per-session data for each client connection
 struct per_session_data__echo {
@@ -304,14 +315,15 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                     // Iterate over the players in the room and add their data to the array
                     for (int i = 0; i < rooms[room_access_id]->player_count; i++) {
                         printf("Room %d: Player %d\n",room_access_id+1,i);
-                        User *player = rooms[room_access_id]->players[i];  // Get the player
+                        User *player = &rooms[room_access_id]->players[i];  // Get the player
+                         
                         if (player == NULL){
                             printf("Player is NULL");
                             return -1;
                         }
 
                         json_t *player_data = json_object();
-                        char* id = malloc(25);
+                        char* id[25];
                         if (&player->id == NULL){
                             printf("Player Id is NULL");
                         }
@@ -329,6 +341,8 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                         json_object_set_new(player_data, "updatedAt", json_integer(player->updatedAt));
 
                         json_array_append_new(players_array, player_data);
+                        // free(player);
+
                     }
 
                     json_object_set_new(room_data, "roomPlayers", players_array);
@@ -342,10 +356,9 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                     fprintf(stderr, "Error: Failed to serialize response to JSON.\n");
                     json_decref(parsed_json);
                     free(user);
+                 
                     return -1;
                 }
-
-                printf("Serialized response: %s\n", response_str);
 
                 // Send the message via WebSocket
                 unsigned char *buf = (unsigned char *)response_str;
@@ -361,6 +374,59 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 json_decref(parsed_json);
                 json_decref(response_json);
                 free(user);
+
+
+                //Send startVoting
+                int room_access_id = room_id - 1;
+                if (rooms[room_access_id]->player_count >= MAX_PLAYERS) {
+                    // Prepare the response for "startVoting"
+                    json_t *voting_response_json = json_object();
+                    json_t *data_object = json_object(); // New object to hold "data"
+                    json_t *categories_array = json_array(); // Array to hold categories
+
+                    // Add categories to the array
+                    for (int category_id = 0; category_id < sizeof(categories) / sizeof(categories[0]); category_id++) {
+                        if (categories[category_id]) {
+                            json_t *category_data = json_object();
+                            json_object_set_new(category_data, "id", json_integer(category_id));
+                            json_object_set_new(category_data, "value", json_string(categories[category_id]));
+                            json_array_append_new(categories_array, category_data);
+                        }
+                    }
+
+                    // Set the categories inside the "data" object
+                    json_object_set_new(data_object, "categories", categories_array);
+
+                    // Set the "action" and "data" fields
+                    json_object_set_new(voting_response_json, "action", json_string("startVoting"));
+                    json_object_set_new(voting_response_json, "data", data_object);
+
+                    // Serialize the voting response
+                    const char *voting_response_str = json_dumps(voting_response_json, 0);
+                    if (voting_response_str == NULL) {
+                        fprintf(stderr, "Error: Failed to serialize 'startVoting' response to JSON.\n");
+                        json_decref(voting_response_json);
+                        json_decref(parsed_json);
+                        free(user);
+                        return -1;
+                    }
+
+                    // Send the voting response via WebSocket
+                    unsigned char *voting_buf = (unsigned char *)voting_response_str;
+                    int len_voting_sent = lws_write(wsi, voting_buf, strlen(voting_response_str), LWS_WRITE_TEXT);
+                    if (len_voting_sent < 0) {
+                        fprintf(stderr, "Error: Failed to send 'startVoting' message to client\n");
+                        json_decref(voting_response_json);
+                        json_decref(parsed_json);
+                        free(user);
+                        return -1;
+                    }
+                    printf("Started voting");
+
+                    // Clean up voting response JSON
+                    json_decref(voting_response_json);
+                }
+
             }
 
 
@@ -413,6 +479,7 @@ static struct lws_protocols protocols[] = {
 
 // Function to initialize and run WebSocket server
 int start_server() {
+   
     struct lws_context_creation_info info;
     memset(&info, 0, sizeof(info));
     info.port = GAMEPLAY_PORT;
@@ -426,7 +493,7 @@ int start_server() {
     while (1) {
         lws_service(context, 100);
     }
-
+    
     lws_context_destroy(context);
     return 0;
 }

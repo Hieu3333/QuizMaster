@@ -32,7 +32,7 @@ export const Match: FC<MatchProps> = ({
     // WebSocket event listener for answer results
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      if (message.type === 'answerResult') {
+      if (message.action === 'answerResult') {
         const { isCorrect, playerId, answer } = message.data;
 
         if (isCorrect && playerId === user?.id) {
@@ -80,7 +80,7 @@ export const Match: FC<MatchProps> = ({
         );
       }
 
-      if (message.type === 'nextQuestion') {
+      if (message.action === 'nextQuestion') {
         setCurrentQuestion(message.data);
         setHints([]);
         setHasAnswered(false);
@@ -98,7 +98,7 @@ export const Match: FC<MatchProps> = ({
     // Sending the answer to the WebSocket server
     socket.send(
       JSON.stringify({
-        type: 'answer',
+        action: 'answer',
         data: { answer, playerId: user?.id as string },
       })
     );

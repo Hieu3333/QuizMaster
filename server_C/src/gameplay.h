@@ -11,7 +11,7 @@
 
 #define GAMEPLAY_PORT 5000  // WebSocket server port
 
-#define MAX_PLAYERS 4
+#define MAX_PLAYERS 2
 #define MAX_ROOMS 10
 #define MAX_QUESTIONS 7
 typedef struct Question {
@@ -22,7 +22,7 @@ typedef struct Question {
 
 typedef struct Room {
     int id;
-    User* players[MAX_PLAYERS];
+    User players[MAX_PLAYERS];
     int player_count;
     char votes[MAX_PLAYERS][50];
     int scores[MAX_PLAYERS];
@@ -31,6 +31,8 @@ typedef struct Room {
     Question questions[MAX_QUESTIONS];
     int currentQuestion;
 } Room;
+
+
 
 
 

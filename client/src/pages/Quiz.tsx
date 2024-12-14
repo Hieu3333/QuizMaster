@@ -28,13 +28,15 @@ export const Quiz: FC = () => {
     // Listening to messages from the WebSocket server
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
+      console.log(message);
       
-      switch (message.type) {
+      switch (message.action) {
         case 'joinRoom':
           setPlayers(message.data.roomPlayers);
           break;
 
         case 'startVoting':
+          console.log('start voting');
           setQuizState('voting');
           setCategories(message.data.categories);
           break;
@@ -51,7 +53,7 @@ export const Quiz: FC = () => {
           break;
 
         default:
-          console.log('Unknown message type', message.type);
+          console.log('Unknown message type', message.action);
       }
     };
 
@@ -87,8 +89,8 @@ export const Quiz: FC = () => {
   }, [quizState, winner]);
 
   // Function to send messages to the WebSocket server
-  const sendMessage = (type: string, data: any) => {
-    socket.send(JSON.stringify({ type, data }));
+  const sendMessage = (action: string, data: any) => {
+    socket.send(JSON.stringify({ action, data }));
   };
 
   return (

@@ -17,7 +17,7 @@ export const Voting: FC<VotingProps> = ({ categories }) => {
     // Listen for vote result updates via WebSocket
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      if (message.type === 'voteResult') {
+      if (message.action === 'voteResult') {
         const { playerId } = message.data;
         if (playerId === user?.id) {
           setHasVoted(true); // Mark that the user has voted after receiving confirmation
@@ -36,7 +36,7 @@ export const Voting: FC<VotingProps> = ({ categories }) => {
     // Send the vote via WebSocket
     socket.send(
       JSON.stringify({
-        type: 'vote',
+        action: 'vote',
         data: { category: key, playerId: user?.id as string },
       })
     );
