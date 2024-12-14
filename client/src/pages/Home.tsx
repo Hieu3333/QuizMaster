@@ -24,6 +24,7 @@ export const Home = () => {
     // Handle WebSocket messages
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
+      console.log(message);
 
       switch (message.action) {
         case 'joinRoom':

@@ -22,7 +22,7 @@ typedef struct Question {
 
 typedef struct Room {
     int id;
-    User players[MAX_PLAYERS];
+    User* players[MAX_PLAYERS];
     int player_count;
     char votes[MAX_PLAYERS][50];
     int scores[MAX_PLAYERS];

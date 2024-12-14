@@ -11,7 +11,7 @@
 
 
 // Global variables
-Room rooms[MAX_ROOMS];
+Room* rooms[MAX_ROOMS];
 int room_count = 0;
 
 // Helper function to parse ISO8601 datetime string to time_t
@@ -52,6 +52,7 @@ User *extract_user_from_data(json_t *data) {
     playedGames_json = json_object_get(data, "playedGames");
     createdAt_json = json_object_get(data, "createdAt");
     updatedAt_json = json_object_get(data, "updatedAt");
+    
 
     if (!id_json || !username_json || !password_json || !wins_json || !totalScore_json || !playedGames_json || !createdAt_json || !updatedAt_json) {
         fprintf(stderr, "Error: Missing required fields in 'data'.\n");
@@ -75,10 +76,18 @@ User *extract_user_from_data(json_t *data) {
     }
 
     // Copy strings for username and password
-    user->username = strdup(json_string_value(username_json));
-    user->password = strdup(json_string_value(password_json));
+    const char *username_str = json_string_value(username_json);
+    const char *password_str = json_string_value(password_json);
+    if (username_str && password_str) {
+        user->username = strdup(username_str);
+        user->password = strdup(password_str);
+    } else {
+        fprintf(stderr, "Error: Invalid or missing username/password.\n");
+        free(user);
+        return NULL;
+    }
 
-    // Get integer values
+    // Extract integer values
     user->wins = json_integer_value(wins_json);
     user->totalScore = json_integer_value(totalScore_json);
     user->playedGames = json_integer_value(playedGames_json);
@@ -96,6 +105,7 @@ User *extract_user_from_data(json_t *data) {
         return NULL;
     }
 
+
     return user;
 }
 
@@ -103,10 +113,15 @@ User *extract_user_from_data(json_t *data) {
 int find_room_for_user(User *user) {
     // Check if the user is already in a room
     for (int i = 0; i < room_count; i++) {
-        for (int j = 0; j < rooms[i].player_count; j++) {
-            if (bson_oid_compare(&rooms[i].players[j].id,&user->id)) {
+        for (int j = 0; j < rooms[i]->player_count; j++) {
+            if (bson_oid_compare(&rooms[i]->players[j]->id,&user->id)==0) {
+                char id_str1[25];  // Buffer to hold the string representation of the BSON Object ID
+                char id_str2[25];
+                bson_oid_to_string(&user->id, id_str1);
+                bson_oid_to_string(&rooms[i]->players[j]->id, id_str2);
                 // User is already playing
-                printf("User %d is already in room %d.\n", user->id, rooms[i].id);
+                printf("User %s is already in room %d.\n", user->username, rooms[i]->id);
+                printf("ID %s is finding room and ID %s is already in room.\n", id_str1, id_str2);
                 return -1;  // User already in a room
             }
         }
@@ -114,11 +129,13 @@ int find_room_for_user(User *user) {
 
     // Try to add the user to an existing room
     for (int i = 0; i < room_count; i++) {
-        if (rooms[i].player_count < MAX_PLAYERS) {
-            rooms[i].players[rooms[i].player_count] = *user;
-            rooms[i].player_count++;
-            printf("User %d joined room %d.\n", user->id, rooms[i].id);
-            return rooms[i].id;  // Room ID user joined
+        if (rooms[i]->player_count < MAX_PLAYERS) {
+            rooms[i]->players[rooms[i]->player_count] = user;
+            rooms[i]->player_count++;
+            char id_str[25];  // Buffer to hold the string representation of the BSON Object ID
+                bson_oid_to_string(&user->id, id_str);
+            printf("User %s joined room %d.\n", user->username, rooms[i]->id);
+            return rooms[i]->id;  // Room ID user joined
         }
     }
 
@@ -128,22 +145,34 @@ int find_room_for_user(User *user) {
 
 // Function to create a new room for the user
 int create_new_room(User *user) {
-    // Create a new room and add the user
-    Room new_room;
+    if (room_count >= MAX_ROOMS) {
+        printf("Error: Cannot create new room, maximum number of rooms reached.\n");
+        return -1;  // Error code indicating failure
+    }
     
-    new_room.id = room_count + 1;
-    new_room.players[0] = *user;
-    new_room.player_count = 1;
-    new_room.isOngoing = 0;  // Game is not yet started
+    // Allocate memory for the new room
+    rooms[room_count] = (Room *)malloc(sizeof(Room));
+    if (rooms[room_count] == NULL) {
+        printf("Error: Memory allocation failed for the new room.\n");
+        return -1;  // Memory allocation failed
+    }
 
-    rooms[room_count] = new_room;
+    Room* new_room = (Room *)malloc(sizeof(Room)); // Allocate memory for the new room
+    if (new_room == NULL) {
+        printf("Error: Memory allocation failed for the new room.\n");
+        return -1;  // Memory allocation failed
+    }
+
+    // Create a new room and add the user
+    new_room->id = room_count + 1;  // Assign room ID
+    new_room->players[0] = user;    // Add the user to the room
+    new_room->player_count = 1;      // One player in the room
+    new_room->isOngoing = 0;         // Game is not yet started
+
+    rooms[room_count] = new_room;  // Store the new room in the rooms array
     room_count++;
 
-
-    printf("Joined room %d.\n", new_room.id);
-    printf("Num room: %d\n",room_count);
-
-    return new_room.id;
+    return new_room->id;
 }
 
 // This structure stores per-session data for each client connection
@@ -241,7 +270,6 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
                 // Assuming extract_user_from_data is a function that handles the user extraction
                 User* user = extract_user_from_data(user_json);
-
                 if (user == NULL) {
                     fprintf(stderr, "Error: Failed to extract user from 'data'.\n");
                     json_decref(parsed_json);  // Free JSON object
@@ -259,59 +287,56 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
                 // Prepare the response JSON object
                 json_t *response_json = json_object();
-
-                // Assuming 'room' is a pointer or reference to the Room struct
                 json_t *room_data = json_object();
 
-                if (room_id > 0) {
+                if (room_id <= room_count) {
                     // Room was found or created, create the response accordingly
                     json_object_set_new(room_data, "roomId", json_integer(room_id));
+                    int room_access_id = room_id-1;
 
-                    // Create an array to hold the players' information
                     json_t *players_array = json_array(); // Create an array of players
 
+                    // Check if there are any players
+                    if (rooms[room_access_id]->player_count == 0) {
+                        printf("No players in the room.\n");
+                    }
+
                     // Iterate over the players in the room and add their data to the array
-                    for (int i = 0; i < rooms->player_count; i++) {
-                        // Assuming the 'User' struct is updated with these fields
-                        User *player = &rooms->players[i];  // Get the player
+                    for (int i = 0; i < rooms[room_access_id]->player_count; i++) {
+                        printf("Room %d: Player %d\n",room_access_id+1,i);
+                        User *player = rooms[room_access_id]->players[i];  // Get the player
+                        if (player == NULL){
+                            printf("Player is NULL");
+                            return -1;
+                        }
 
                         json_t *player_data = json_object();
-
                         char* id = malloc(25);
-                        bson_oid_to_string(&player->id,id);
-                        // Add user info to the player_data object
-                        json_object_set_new(player_data, "id", json_string(id));  // Convert bson_oid_t to string
+                        if (&player->id == NULL){
+                            printf("Player Id is NULL");
+                        }
+                        bson_oid_to_string(&player->id, id);
+                        printf("player[%d] - id: %s, username: %s, wins: %d, totalScore: %d, playedGames: %d\n",
+           i, id, player->username, player->wins, player->totalScore, player->playedGames);
+
+                        json_object_set_new(player_data, "id", json_string(id));
                         json_object_set_new(player_data, "username", json_string(player->username));
-                        json_object_set_new(player_data, "password", json_string(player->password));  // May want to exclude this in production for security reasons
+                        json_object_set_new(player_data, "password", json_string(player->password));
                         json_object_set_new(player_data, "wins", json_integer(player->wins));
                         json_object_set_new(player_data, "totalScore", json_integer(player->totalScore));
                         json_object_set_new(player_data, "playedGames", json_integer(player->playedGames));
                         json_object_set_new(player_data, "createdAt", json_integer(player->createdAt));
                         json_object_set_new(player_data, "updatedAt", json_integer(player->updatedAt));
 
-                        // Add the player data to the players array
                         json_array_append_new(players_array, player_data);
                     }
 
-                    // Add the players array to the room data
                     json_object_set_new(room_data, "roomPlayers", players_array);
-
-                    // Include action as 'joinRoom'
                     json_object_set_new(response_json, "action", json_string("joinRoom"));
                     json_object_set_new(response_json, "data", room_data);
-                } else {
-                    // If room creation failed, respond with an error or different message
-                    json_t *created_room_data = json_object();
-                    json_object_set_new(created_room_data, "roomId", json_integer(room_id)); // In case of room creation
-
-                    // Include action as 'createdRoom'
-                    json_object_set_new(response_json, "action", json_string("createdRoom"));
-                    json_object_set_new(response_json, "data", created_room_data);
                 }
 
-
-
-                // Send the response back to the client
+                // Serialize the response and send it
                 const char *response_str = json_dumps(response_json, 0);
                 if (response_str == NULL) {
                     fprintf(stderr, "Error: Failed to serialize response to JSON.\n");
@@ -320,7 +345,9 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                     return -1;
                 }
 
-                // Use lws_write to send the response back to the client
+                printf("Serialized response: %s\n", response_str);
+
+                // Send the message via WebSocket
                 unsigned char *buf = (unsigned char *)response_str;
                 int len_sent = lws_write(wsi, buf, strlen(response_str), LWS_WRITE_TEXT);
                 if (len_sent < 0) {
@@ -332,9 +359,10 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
                 // Clean up
                 json_decref(parsed_json);
-                json_decref(response_json); // Free the response JSON object
-                free(user); // Free the user object
+                json_decref(response_json);
+                free(user);
             }
+
 
 
 
