@@ -1,29 +1,38 @@
-#include <time.h>
-#include <stdlib.h>
+#ifndef GAMEPLAY_H
+
+
+#include <stdio.h>
 #include <string.h>
-#include <stdbool.h>
+#include <stdlib.h>
+#include <libwebsockets.h>
+#include <jansson.h>
+#include <bson.h>
 #include "user.h"
+
+#define GAMEPLAY_PORT 5000  // WebSocket server port
 
 #define MAX_PLAYERS 4
 #define MAX_ROOMS 10
-#define BUFFER_SIZE 1024
-typedef struct {
-    int id;
-    char name[50];
-    int score;
-} Player;
+#define MAX_QUESTIONS 7
+typedef struct Question {
+    char question[256];
+    char choices[4][128];
+    char correctAnswer[128];
+} Question;
 
-typedef struct {
+typedef struct Room {
     int id;
-    Player players[MAX_PLAYERS];
-    int num_players;
-    int votes[MAX_PLAYERS];
+    User players[MAX_PLAYERS];
+    int player_count;
+    char votes[MAX_PLAYERS][50];
     int scores[MAX_PLAYERS];
-    int is_ongoing;
+    int answered[MAX_PLAYERS];
+    int isOngoing;
+    Question questions[MAX_QUESTIONS];
+    int currentQuestion;
 } Room;
 
-typedef struct {
-    char question[255];
-    char choices[4][255];
-    char correct_answer[255];
-} Question;
+
+
+int start_server();
+#endif

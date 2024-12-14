@@ -5,30 +5,10 @@
 #include <jansson.h>
 #include <bson.h>
 #include "user.h"
+#include "gameplay.h"
 
-#define PORT 5000  // WebSocket server port
 
-#define MAX_PLAYERS 4
-#define MAX_ROOMS 10
-#define MAX_QUESTIONS 7
 
-typedef struct Question {
-    char question[256];
-    char choices[4][128];
-    char correctAnswer[128];
-} Question;
-
-typedef struct Room {
-    int id;
-    User players[MAX_PLAYERS];
-    int player_count;
-    char votes[MAX_PLAYERS][50];
-    int scores[MAX_PLAYERS];
-    int answered[MAX_PLAYERS];
-    int isOngoing;
-    Question questions[MAX_QUESTIONS];
-    int currentQuestion;
-} Room;
 
 // Global variables
 Room rooms[MAX_ROOMS];
@@ -43,6 +23,7 @@ time_t iso8601_to_time(const char *datetime) {
     }
     return mktime(&tm);
 }
+
 
 // Function to extract user info from JSON 'data' object
 User *extract_user_from_data(json_t *data) {
@@ -276,7 +257,88 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                     return -1;
                 }
 
-            } else if (strcmp(action_str, "vote") == 0) {
+                // Prepare the response JSON object
+                json_t *response_json = json_object();
+
+                // Assuming 'room' is a pointer or reference to the Room struct
+                json_t *room_data = json_object();
+
+                if (room_id > 0) {
+                    // Room was found or created, create the response accordingly
+                    json_object_set_new(room_data, "roomId", json_integer(room_id));
+
+                    // Create an array to hold the players' information
+                    json_t *players_array = json_array(); // Create an array of players
+
+                    // Iterate over the players in the room and add their data to the array
+                    for (int i = 0; i < rooms->player_count; i++) {
+                        // Assuming the 'User' struct is updated with these fields
+                        User *player = &rooms->players[i];  // Get the player
+
+                        json_t *player_data = json_object();
+
+                        char* id = malloc(25);
+                        bson_oid_to_string(&player->id,id);
+                        // Add user info to the player_data object
+                        json_object_set_new(player_data, "id", json_string(id));  // Convert bson_oid_t to string
+                        json_object_set_new(player_data, "username", json_string(player->username));
+                        json_object_set_new(player_data, "password", json_string(player->password));  // May want to exclude this in production for security reasons
+                        json_object_set_new(player_data, "wins", json_integer(player->wins));
+                        json_object_set_new(player_data, "totalScore", json_integer(player->totalScore));
+                        json_object_set_new(player_data, "playedGames", json_integer(player->playedGames));
+                        json_object_set_new(player_data, "createdAt", json_integer(player->createdAt));
+                        json_object_set_new(player_data, "updatedAt", json_integer(player->updatedAt));
+
+                        // Add the player data to the players array
+                        json_array_append_new(players_array, player_data);
+                    }
+
+                    // Add the players array to the room data
+                    json_object_set_new(room_data, "roomPlayers", players_array);
+
+                    // Include action as 'joinRoom'
+                    json_object_set_new(response_json, "action", json_string("joinRoom"));
+                    json_object_set_new(response_json, "data", room_data);
+                } else {
+                    // If room creation failed, respond with an error or different message
+                    json_t *created_room_data = json_object();
+                    json_object_set_new(created_room_data, "roomId", json_integer(room_id)); // In case of room creation
+
+                    // Include action as 'createdRoom'
+                    json_object_set_new(response_json, "action", json_string("createdRoom"));
+                    json_object_set_new(response_json, "data", created_room_data);
+                }
+
+
+
+                // Send the response back to the client
+                const char *response_str = json_dumps(response_json, 0);
+                if (response_str == NULL) {
+                    fprintf(stderr, "Error: Failed to serialize response to JSON.\n");
+                    json_decref(parsed_json);
+                    free(user);
+                    return -1;
+                }
+
+                // Use lws_write to send the response back to the client
+                unsigned char *buf = (unsigned char *)response_str;
+                int len_sent = lws_write(wsi, buf, strlen(response_str), LWS_WRITE_TEXT);
+                if (len_sent < 0) {
+                    fprintf(stderr, "Error: Failed to send message to client\n");
+                    json_decref(parsed_json);
+                    free(user);
+                    return -1;
+                }
+
+                // Clean up
+                json_decref(parsed_json);
+                json_decref(response_json); // Free the response JSON object
+                free(user); // Free the user object
+            }
+
+
+
+             else if (strcmp(action_str, "vote") == 0) {
                 // Handle "vote" logic
                 printf("vote action received\n");
                 // Collect votes and determine the category
@@ -321,30 +383,22 @@ static struct lws_protocols protocols[] = {
     { NULL, NULL, 0, 0 }  // Terminating entry
 };
 
-int main() {
-    // WebSocket server info configuration
+// Function to initialize and run WebSocket server
+int start_server() {
     struct lws_context_creation_info info;
     memset(&info, 0, sizeof(info));
-    info.port = PORT;  // The port the WebSocket server will listen on
-    info.protocols = protocols;
-    info.gid = -1;
-    info.uid = -1;
-
-    // Create the WebSocket server context
+    info.port = GAMEPLAY_PORT;
+    info.protocols = (struct lws_protocols[]){{"http", callback_websocket, 0, 0}, {NULL, NULL, 0, 0}};
     struct lws_context *context = lws_create_context(&info);
     if (!context) {
-        printf("Error creating WebSocket server context!\n");
+        fprintf(stderr, "Error: Unable to create WebSocket context\n");
         return -1;
     }
 
-    // Main server loop
-    printf("WebSocket server listening on ws://localhost:%d\n", PORT);
     while (1) {
-        // Handle WebSocket events
-        lws_service(context, 1000);
+        lws_service(context, 100);
     }
 
-    // Cleanup and shutdown
     lws_context_destroy(context);
     return 0;
 }

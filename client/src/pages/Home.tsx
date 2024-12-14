@@ -25,9 +25,10 @@ export const Home = () => {
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
 
-      switch (message.type) {
+      switch (message.action) {
         case 'joinRoom':
           setPlayers(message.data.roomPlayers);
+          console.log(message.data.roomPlayers);
           navigate(`../quiz/${message.data.roomId}`, { state: { roomPlayers: message.data.roomPlayers } });
           break;
 

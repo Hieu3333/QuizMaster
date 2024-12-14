@@ -1,6 +1,7 @@
 {
     "files.associations": {
         "stdio.h": "c",
-        "mongoc.h": "c"
+        "mongoc.h": "c",
+        "libwebsockets.h": "c"
     }
 }

@@ -3,7 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
-#include <json-c/json.h>
+#include <jansson.h>
 #include <pthread.h>
 #include "auth.h"
 #include "mongodb_connect.h"
@@ -79,46 +79,60 @@ char* extract_body(const char *request) {
 // Helper function to handle /api/auth/register
 void handle_register(int client_sock, const char *body) {
     // Parse JSON body
-    struct json_object *parsed_json = json_tokener_parse(body);
+    json_error_t error;
+    json_t *parsed_json = json_loads(body, 0, &error);
     if (!parsed_json) {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid JSON\"}");
         return;
     }
 
-    struct json_object *username_obj, *password_obj;
-    json_object_object_get_ex(parsed_json, "username", &username_obj);
-    json_object_object_get_ex(parsed_json, "password", &password_obj);
+    // Extract "username" and "password" fields
+    json_t *username_obj = json_object_get(parsed_json, "username");
+    json_t *password_obj = json_object_get(parsed_json, "password");
 
-    const char *username = json_object_get_string(username_obj);
-    const char *password = json_object_get_string(password_obj);
+    if (!json_is_string(username_obj) || !json_is_string(password_obj)) {
+        send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid username or password\"}");
+        json_decref(parsed_json);  // Free parsed JSON object
+        return;
+    }
+
+    const char *username = json_string_value(username_obj);
+    const char *password = json_string_value(password_obj);
 
     // Check registration logic
     if (register_user(username, password)) {
         send_http_response(client_sock, 201, "Created", "application/json", "{\"message\": \"User created successfully\"}");
-        printf("200 GET /api/auth/register");
+        printf("201 POST /api/auth/register\n");
     } else {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"User with this username already exists\"}");
-        printf("400 GET /api/auth/register error");
+        printf("400 POST /api/auth/register error\n");
     }
 
-    json_object_put(parsed_json);  // Free parsed JSON object
+    json_decref(parsed_json);  // Free parsed JSON object
 }
 
 // Helper function to handle /api/auth/login
 void handle_login(int client_sock, const char *body) {
     // Parse JSON body
-    struct json_object *parsed_json = json_tokener_parse(body);
+    json_error_t error;
+    json_t *parsed_json = json_loads(body, 0, &error);
     if (!parsed_json) {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid JSON\"}");
         return;
     }
 
-    struct json_object *username_obj, *password_obj;
-    json_object_object_get_ex(parsed_json, "username", &username_obj);
-    json_object_object_get_ex(parsed_json, "password", &password_obj);
+    // Extract "username" and "password" fields
+    json_t *username_obj = json_object_get(parsed_json, "username");
+    json_t *password_obj = json_object_get(parsed_json, "password");
 
-    const char *username = json_object_get_string(username_obj);
-    const char *password = json_object_get_string(password_obj);
+    if (!json_is_string(username_obj) || !json_is_string(password_obj)) {
+        send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid username or password\"}");
+        json_decref(parsed_json);  // Free parsed JSON object
+        return;
+    }
+
+    const char *username = json_string_value(username_obj);
+    const char *password = json_string_value(password_obj);
 
     // Handle login logic
     User *user = login(username, password);
@@ -132,35 +146,34 @@ void handle_login(int client_sock, const char *body) {
         format_time_iso8601(user->createdAt, created_at_iso, sizeof(created_at_iso));
         format_time_iso8601(user->updatedAt, updated_at_iso, sizeof(updated_at_iso));
 
-        char user_json[1024];
-
         // Prepare JSON response
-        char response[1024];
-        snprintf(user_json, sizeof(user_json),
-                 "{"
-                 "\"id\": \"%s\", "
-                 "\"username\": \"%s\", "
-                 "\"password\": \"%s\", "  // Consider removing password in production
-                 "\"wins\": %d, "
-                 "\"totalScore\": %d, "
-                 "\"playedGames\": %d, "
-                 "\"createdAt\": \"%s\", "
-                 "\"updatedAt\": \"%s\""
-                 "}",
-                 id_str, user->username, user->password,
-                 user->wins, user->totalScore, user->playedGames,
-                 created_at_iso, updated_at_iso);
+        json_t *response_json = json_object();
+        json_object_set_new(response_json, "id", json_string(id_str));
+        json_object_set_new(response_json, "username", json_string(user->username));
+        json_object_set_new(response_json, "password", json_string(user->password)); // Consider removing password in production
+        json_object_set_new(response_json, "wins", json_integer(user->wins));
+        json_object_set_new(response_json, "totalScore", json_integer(user->totalScore));
+        json_object_set_new(response_json, "playedGames", json_integer(user->playedGames));
+        json_object_set_new(response_json, "createdAt", json_string(created_at_iso));
+        json_object_set_new(response_json, "updatedAt", json_string(updated_at_iso));
 
+        char *user_json = json_dumps(response_json, JSON_COMPACT);
         send_http_response(client_sock, 200, "OK", "application/json", user_json);
-        printf("200 GET /api/auth/login");
-        free(user);  // Free the user object
+
+        printf("200 GET /api/auth/login\n");
+    
+        
+        json_decref(response_json);  // Free JSON response object
+        free(user_json);            // Free the serialized JSON string
+        free(user);                 // Free the user object
     } else {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid username or password\"}");
         printf("400 GET /api/auth/login\n");
     }
 
-    json_object_put(parsed_json);  // Free parsed JSON object
+    json_decref(parsed_json);  // Free parsed JSON object
 }
+
 
 
 
@@ -367,50 +380,88 @@ void handle_client(int client_sock) {
 }
 
 
-// int main() {
-//     // Initialize MongoDB connection
-//     init_mongo();
+// Thread function for handling the WebSocket server
+void *websocket_server_thread(void *arg) {
+    printf("Starting WebSocket server on port %d...\n", GAMEPLAY_PORT);
 
-//     // Create a socket
-//     int server_sock = socket(AF_INET, SOCK_STREAM, 0);
-//     if (server_sock < 0) {
-//         perror("Socket creation failed");
-//         exit(EXIT_FAILURE);
-//     }
+    int result = start_server();
+    if (result == -1) {
+        fprintf(stderr, "WebSocket server failed to start.\n");
+        pthread_exit(NULL);  // Terminate the thread
+    }
 
-//     // Bind the socket to the port
-//     struct sockaddr_in server_addr = {0};
-//     server_addr.sin_family = AF_INET;
-//     server_addr.sin_addr.s_addr = INADDR_ANY;
-//     server_addr.sin_port = htons(PORT);
+    pthread_exit(NULL);
+}
 
-//     if (bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
-//         perror("Bind failed");
-//         close(server_sock);
-//         exit(EXIT_FAILURE);
-//     }
+// Thread function for handling the main server loop on port 3000
+void *main_server_thread(void *arg) {
+    // Create a socket
+    int server_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (server_sock < 0) {
+        perror("Socket creation failed");
+        exit(EXIT_FAILURE);
+    }
 
-//     // Listen for incoming connections
-//     if (listen(server_sock, 5) < 0) {
-//         perror("Listen failed");
-//         close(server_sock);
-//         exit(EXIT_FAILURE);
-//     }
+    // Bind the socket to the port
+    struct sockaddr_in server_addr = {0};
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_port = htons(PORT);
 
-//     printf("Server listening on port %d...\n", PORT);
+    if (bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
+        perror("Bind failed");
+        close(server_sock);
+        exit(EXIT_FAILURE);
+    }
 
-//     // Accept and handle incoming connections
-//     while (1) {
-//         int client_sock = accept(server_sock, NULL, NULL);
-//         if (client_sock < 0) {
-//             perror("Accept failed");
-//             continue;
-//         }
-//         handle_client(client_sock);
-//     }
+    // Listen for incoming connections
+    if (listen(server_sock, 5) < 0) {
+        perror("Listen failed");
+        close(server_sock);
+        exit(EXIT_FAILURE);
+    }
 
-//     // Clean up
-//     close(server_sock);
-//     cleanup_mongo();
-//     return 0;
-// }
+    printf("Server listening on port %d...\n", PORT);
+
+    // Accept and handle incoming connections
+    while (1) {
+        int client_sock = accept(server_sock, NULL, NULL);
+        if (client_sock < 0) {
+            perror("Accept failed");
+            continue;
+        }
+        handle_client(client_sock);
+    }
+
+    // Clean up
+    close(server_sock);
+    pthread_exit(NULL);
+}
+
+int main() {
+    // Initialize MongoDB connection
+    init_mongo();
+
+    // Create threads for the main server and WebSocket server
+    pthread_t main_thread, websocket_thread;
+
+    if (pthread_create(&main_thread, NULL, main_server_thread, NULL) != 0) {
+        perror("Failed to create main server thread");
+        cleanup_mongo();
+        exit(EXIT_FAILURE);
+    }
+
+    if (pthread_create(&websocket_thread, NULL, websocket_server_thread, NULL) != 0) {
+        perror("Failed to create WebSocket server thread");
+        cleanup_mongo();
+        exit(EXIT_FAILURE);
+    }
+
+    // Wait for threads to finish
+    pthread_join(main_thread, NULL);
+    pthread_join(websocket_thread, NULL);
+
+    // Clean up
+    cleanup_mongo();
+    return 0;
+}

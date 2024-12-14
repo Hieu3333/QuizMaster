@@ -1,16 +1,17 @@
 CC = gcc
-CFLAGS = -Wall -g -I/usr/local/include/libmongoc-1.0 -I/usr/local/include/libbson-1.0 # Include paths for MongoDB and BSON
-LIBS = -ljansson -lwebsockets -ljson-c -lmongoc-1.0 -lbson-1.0 -L/usr/local/lib # No need to link mongoose library since it's part of your source files
+LIBS = -ljansson -ljson-c -lmongoc-1.0 -lbson-1.0 -L/usr/lib/x86_64-linux-gnu -lwebsockets
+
+CFLAGS = -Wall -g -I/usr/local/include/libmongoc-1.0 -I/usr/local/include/libbson-1.0 $(shell pkg-config --cflags libwebsockets)
 
 
 # Source files (added mongoose.c here)
-SRC = auth.c mongodb_connect.c user.c gameplay.c server.c mongoose.c gameplay_test.c  # Added mongoose.c to the list of sources
+SRC = auth.c mongodb_connect.c user.c gameplay.c server.c mongoose.c # Added mongoose.c to the list of sources
 
 # Object files (convert .c to .o)
 OBJ = $(SRC:.c=.o)
 
 # Executable name
-EXEC = gameplay
+EXEC = server
 
 # Default target: Build and run the server
 all: $(EXEC)
