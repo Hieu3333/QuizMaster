@@ -442,6 +442,7 @@ int main() {
     // Initialize MongoDB connection
     init_mongo();
 
+    // curl_global_init();
     // Create threads for the main server and WebSocket server
     pthread_t main_thread, websocket_thread;
 

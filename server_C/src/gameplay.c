@@ -6,6 +6,9 @@
 #include <bson.h>
 #include "user.h"
 #include "gameplay.h"
+#include <curl/curl.h>
+#include <jansson.h>
+#include <b64/cdecode.h>
 
 
 typedef struct {
@@ -26,6 +29,7 @@ Category categories[] = {
 // Global variables
 Room* rooms[MAX_ROOMS];
 int room_count = 0;
+Question questions[MAX_QUESTIONS];
 
 typedef struct ConnectedUser {
     struct lws *wsi; // WebSocket instance
@@ -35,6 +39,156 @@ typedef struct ConnectedUser {
 ConnectedUser *connected_users[MAX_USERS];
 int connected_user_count = 0;
 int next_user_id = 1; 
+
+typedef struct {
+    int category;             // Question category
+    Question *questions;      // Array to store fetched questions
+    int *result;              // Pointer to store the number of fetched questions
+} FetchQuestionsArgs;
+
+#define BUFFER_SIZE 4096
+
+// Write callback function to store response data
+size_t write_callback(void *ptr, size_t size, size_t nmemb, char *data) {
+    size_t total_size = size * nmemb;
+    if (total_size + strlen(data) < BUFFER_SIZE) {
+        strncat(data, (char *)ptr, total_size);
+    } else {
+        fprintf(stderr, "Buffer overflow detected in write_callback\n");
+        return 0;
+    }
+    return total_size;
+}
+
+
+// Function to decode a base64 string
+void decode_base64(const char *input, char *output) {
+    base64_decodestate state;
+    base64_init_decodestate(&state);
+    int output_length = base64_decode_block(input, strlen(input), output, &state);
+    output[output_length] = '\0';
+}
+
+
+void fetch_questions_thread(void *args) {
+    FetchQuestionsArgs *fetch_args = (FetchQuestionsArgs *)args;
+    int category = fetch_args->category;
+    Question *questions = fetch_args->questions;
+    int *result = fetch_args->result;
+
+    CURL *curl;
+    CURLcode res;
+    char api_url[] = "https://opentdb.com/api.php";
+    char data[BUFFER_SIZE] = "";  // To store the response data
+    char url[512];
+
+    // Initialize the URL for the API request
+    snprintf(url, sizeof(url), "%s?amount=7&category=%d&difficulty=easy&type=multiple&encode=base64", api_url, category);
+
+    // Initialize CURL
+    curl = curl_easy_init();
+    if (!curl) {
+        fprintf(stderr, "Error: Failed to initialize CURL.\n");
+        *result = -1;
+        pthread_exit(NULL);
+    }
+
+    // Set options for the request
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, data);
+
+    // Perform the request
+    res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        fprintf(stderr, "CURL error: %s\n", curl_easy_strerror(res));
+        curl_easy_cleanup(curl);
+        *result = -1;
+        pthread_exit(NULL);
+    }
+
+    // Parse the JSON response
+    json_error_t error;
+    json_t *root = json_loads(data, 0, &error);
+    if (!root) {
+        fprintf(stderr, "Error parsing JSON response: %s\n", error.text);
+        curl_easy_cleanup(curl);
+        *result = -1;
+        pthread_exit(NULL);
+    }
+
+    json_t *results = json_object_get(root, "results");
+    if (!json_is_array(results)) {
+        fprintf(stderr, "Error: 'results' key is not an array.\n");
+        json_decref(root);
+        curl_easy_cleanup(curl);
+        *result = -1;
+        pthread_exit(NULL);
+    }
+
+    // Parse each question
+    size_t i;
+    size_t question_count = json_array_size(results);
+    for (i = 0; i < question_count; i++) {
+        json_t *question_data = json_array_get(results, i);
+
+        // Allocate memory for each question, choices, and correctAnswer
+        questions[i].question = (char *)malloc(500 * sizeof(char));
+        questions[i].correctAnswer = (char *)malloc(256 * sizeof(char));
+        for (int j = 0; j < 4; j++) {
+            questions[i].choices[j] = (char *)malloc(256 * sizeof(char));
+            if (questions[i].choices[j] == NULL) {
+                fprintf(stderr, "Memory allocation failed for choice %d\n", j);
+                *result = -1;
+                pthread_exit(NULL);
+            }
+        }
+
+        if (questions[i].question == NULL || questions[i].correctAnswer == NULL) {
+            fprintf(stderr, "Memory allocation failed for question or correctAnswer\n");
+            *result = -1;
+            pthread_exit(NULL);
+        }
+
+        // Decode question and correct answer from base64
+        const char *encoded_question = json_string_value(json_object_get(question_data, "question"));
+        const char *encoded_correct_answer = json_string_value(json_object_get(question_data, "correct_answer"));
+        json_t *incorrect_answers = json_object_get(question_data, "incorrect_answers");
+
+        decode_base64(encoded_question, questions[i].question);
+        decode_base64(encoded_correct_answer, questions[i].correctAnswer);
+
+        // Decode choices (include correct answer in the choices)
+        size_t j;
+        int choice_index = 0;
+        json_t *answer;
+        json_array_foreach(incorrect_answers, j, answer) {
+            decode_base64(json_string_value(answer), questions[i].choices[choice_index]);
+            choice_index++;
+        }
+
+        // Add correct answer as the last choice
+        decode_base64(encoded_correct_answer, questions[i].choices[choice_index]);
+
+        // Print out the question, choices, and correct answer after decoding
+        printf("Question %zu: %s\n", i + 1, questions[i].question);
+        printf("Choices:\n");
+        for (int j = 0; j < 4; j++) {
+            printf("  Choice %d: %s\n", j + 1, questions[i].choices[j]);
+        }
+        printf("Correct Answer: %s\n\n", questions[i].correctAnswer);
+    }
+
+    // Clean up
+    json_decref(root);
+    curl_easy_cleanup(curl);
+
+    *result = question_count;  // Set the result to the number of fetched questions
+    pthread_exit(NULL);
+}
+
+
+
 // Add a new user to the connected users array
 void add_websocket_user(struct lws *wsi) {
     if (connected_user_count >= MAX_USERS) {
@@ -225,6 +379,7 @@ int create_new_room(User *user) {
     new_room->id = room_count + 1;   // Assign room ID
     new_room->players[0] = *user;    // Add the user to the room
     new_room->player_count = 1;      // One player in the room
+    new_room->vote_count = 0;
     new_room->isOngoing = 0;         // Game is not yet started
 
     // Convert BSON Object ID to string
@@ -275,25 +430,25 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
             // Parse the incoming message as JSON using Jansson
             json_error_t error;
-            json_t *parsed_json = json_loads(msg, 0, &error);
+            json_t *message_json = json_loads(msg, 0, &error);
 
-            if (!parsed_json) {
+            if (!message_json) {
                 fprintf(stderr, "Error: Failed to parse JSON. Raw message: %s\n", msg);
                 return -1;
             }
 
             // Extract the 'action' field from the parsed JSON
-            json_t *action = json_object_get(parsed_json, "action");
+            json_t *action = json_object_get(message_json, "action");
             if (!action || !json_is_string(action)) {
                 fprintf(stderr, "Error: Key 'action' not found or is not a string in JSON.\n");
-                json_decref(parsed_json);  // Free JSON object
+                json_decref(message_json);  // Free JSON object
                 return -1;
             }
 
             const char *action_str = json_string_value(action);
             if (action_str == NULL) {
                 fprintf(stderr, "Error: 'action' value is not a string or is null.\n");
-                json_decref(parsed_json);  // Free JSON object
+                json_decref(message_json);  // Free JSON object
                 return -1;
             }
 
@@ -302,10 +457,10 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 printf("findMatch action received\n");
 
                 // Extract 'data' field from JSON
-                json_t *user_json = json_object_get(parsed_json, "data");
+                json_t *user_json = json_object_get(message_json, "data");
                 if (!user_json || !json_is_object(user_json)) {
                     fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n");
-                    json_decref(parsed_json);  // Free JSON object
+                    json_decref(message_json);  // Free JSON object
                     return -1;
                 }
 
@@ -313,7 +468,8 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 User* user = extract_user_from_data(user_json);
                 if (user == NULL) {
                     fprintf(stderr, "Error: Failed to extract user from 'data'.\n");
-                    json_decref(parsed_json);  // Free JSON object
+                    json_decref(message_json);  // Free JSON object
+                    free(user);
                     return -1;
                 }
 
@@ -321,7 +477,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 int room_id = find_room_for_user(user);
                 if (room_id < 0) {
                     fprintf(stderr, "Error: Failed to find or create room for user.\n");
-                    json_decref(parsed_json);  // Free JSON object
+                    json_decref(message_json);  // Free JSON object
                     free(user);  // Free the user object
                     return -1;
                 }
@@ -380,30 +536,49 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                     json_object_set_new(response_json, "data", room_data);
                 }
 
-                // Serialize the response and send it
+                // Serialize the response to JSON
                 const char *response_str = json_dumps(response_json, 0);
                 if (response_str == NULL) {
                     fprintf(stderr, "Error: Failed to serialize response to JSON.\n");
-                    json_decref(parsed_json);
+                    json_decref(message_json);
                     free(user);
-                 
                     return -1;
                 }
+
+                // Get the length of the serialized JSON string
+                size_t response_len = strlen(response_str);
+
+                // Allocate buffer with LWS_PRE padding
+                unsigned char *buf = malloc(LWS_PRE + response_len);
+                if (!buf) {
+                    fprintf(stderr, "Error: Memory allocation failed.\n");
+                    json_decref(message_json);
+                    free(user);
+                    free((void *)response_str);
+                    return -1;
+                }
+
+                // Copy the JSON string into the buffer after LWS_PRE
+                memcpy(buf + LWS_PRE, response_str, response_len);
 
                 // Send the message via WebSocket
-                unsigned char *buf = (unsigned char *)response_str;
-                int len_sent = lws_write(wsi, buf, strlen(response_str), LWS_WRITE_TEXT);
+                int len_sent = lws_write(wsi, buf + LWS_PRE, response_len, LWS_WRITE_TEXT);
                 if (len_sent < 0) {
-                    fprintf(stderr, "Error: Failed to send message to client\n");
-                    json_decref(parsed_json);
+                    fprintf(stderr, "Error: Failed to send message to client.\n");
+                    free(buf);
+                    json_decref(message_json);
                     free(user);
+                    free((void *)response_str);
                     return -1;
                 }
 
-                // Clean up
-                json_decref(parsed_json);
-                json_decref(response_json);
+                // Cleanup
+                free(buf);
+                json_decref(message_json);
                 free(user);
+                free((void *)response_str);
+
+                
 
 
                 //Send startVoting
@@ -442,8 +617,8 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                     if (voting_response_str == NULL) {
                         fprintf(stderr, "Error: Failed to serialize 'startVoting' response to JSON.\n");
                         json_decref(voting_response_json);
-                        json_decref(parsed_json);
-                        free(user);
+                   
+                        // free(user);
                         return -1;
                     }
 
@@ -472,21 +647,135 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
                     // Clean up voting response JSON
                     json_decref(voting_response_json);
-                    json_decref(parsed_json);
-                    free(user);
+        
+                    // free(user);
                 }
 
             }
 
+            if (strcmp(action_str, "vote") == 0) {
+            // Handle "vote" logic
+            printf("Vote action received\n");
+
+            // Extract 'data' field from JSON
+            json_t *vote_data_json = json_object_get(message_json, "data");
+            if (!vote_data_json || !json_is_object(vote_data_json)) {
+                fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n");
+                json_decref(message_json);  // Free JSON object
+                return -1;
+            }
+
+            // Extract category and playerId from data
+            const char *category_name = json_string_value(json_object_get(vote_data_json, "category"));
+            const char *player_id_str = json_string_value(json_object_get(vote_data_json, "playerId"));
+
+            if (!category_name || !player_id_str) {
+                fprintf(stderr, "Error: Missing 'category' or 'playerId' in vote data.\n");
+                json_decref(message_json);  // Free JSON object
+                return -1;
+            }
+
+            // Find the player based on playerId
+            User *voting_player = NULL;
+            bson_oid_t player_oid;
+            bson_oid_init_from_string(&player_oid, player_id_str);  
+            int current_room_id;
+
+            for (int i = 0; i < room_count; i++) {
+                for (int j = 0; j < rooms[i]->player_count; j++) {
+                    User *player = &rooms[i]->players[j];
+                    if (bson_oid_compare(&player->id, &player_oid) == 0) {
+                        voting_player = player;
+                        current_room_id = i;
+                        rooms[i]->votes[rooms[i]->vote_count++] = atoi(category_name);
+
+                        break;
+                    }
+                }
+                if (voting_player) {
+
+                    break;
+                }
+            }
+
+            if (!voting_player) {
+                fprintf(stderr, "Error: Player with ID %s not found.\n", player_id_str);
+                json_decref(message_json);  // Free JSON object
+                return -1;
+            }
+
+            // Process the vote
+            printf("Player %s  voted for category '%s'\n", voting_player->username,  category_name);
+            
+            // Check if the votes have reached MAX_PLAYERS
+        if (rooms[current_room_id]->vote_count == MAX_PLAYERS) {
+            // Find the category with the maximum votes
+            int category_votes[100] = {0};  // Assuming there are 100 possible categories
+            for (int i = 0; i < rooms[current_room_id]->vote_count; i++) {
+                category_votes[rooms[current_room_id]->votes[i]]++;
+            }
+
+            int max_votes = 0;
+            int selected_category = -1;
+            for (int i = 0; i < 100; i++) {
+                if (category_votes[i] > max_votes) {
+                    max_votes = category_votes[i];
+                    selected_category = i;
+                }
+            }
+
+            printf("Category %d has the most votes (%d votes)\n", selected_category, max_votes);
+
+            int result = 0;         // Number of fetched questions
+
+            // Create thread arguments
+            FetchQuestionsArgs fetch_args;
+            fetch_args.category = selected_category;
+            fetch_args.questions = questions;
+            fetch_args.result = &result;
+
+            // Create a thread
+            pthread_t thread_id;
+            if (pthread_create(&thread_id, NULL, fetch_questions_thread, &fetch_args) != 0) {
+                fprintf(stderr, "Error: Failed to create thread.\n");
+                return -1;
+            }
+
+            // Wait for the thread to finish
+            if (pthread_join(thread_id, NULL) != 0) {
+                fprintf(stderr, "Error: Failed to join thread.\n");
+                return -1;
+            }
+
+            // Check the result
+            if (result > 0) {
+            printf("Fetched %d questions successfully:\n", result);
+            for (int i = 0; i < result; i++) {
+                if (questions[i].question == NULL) {
+                    fprintf(stderr, "Error: Invalid question o at index %d\n", i);
+                } else {
+                    printf("Q%d: %s\n", i, questions[i].question);
+                }
+
+                for (int j = 0; j < 4; j++) {
+                    printf("  - %s\n", questions[i].choices[j]);
+                }
+            }
+        } else {
+            fprintf(stderr, "Failed to fetch questions.\n");
+        }
+            
+
+            
+        }
 
 
 
-             else if (strcmp(action_str, "vote") == 0) {
-                // Handle "vote" logic
-                printf("vote action received\n");
-                // Collect votes and determine the category
+            
+        }
 
-            } else if (strcmp(action_str, "answer") == 0) {
+
+              else if (strcmp(action_str, "answer") == 0) {
                 // Handle "answer" logic
                 printf("answer action received\n");
                 // Evaluate answer and manage scoring
@@ -497,7 +786,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
             }
 
             // Free the parsed JSON object after usage
-            json_decref(parsed_json);
+            json_decref(message_json);
 
             break;
         }

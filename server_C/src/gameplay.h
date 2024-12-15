@@ -15,17 +15,19 @@
 #define MAX_ROOMS 10
 #define MAX_QUESTIONS 7
 #define MAX_USERS 10
+#define API_URL "https://opentdb.com/api.php"
 typedef struct Question {
-    char question[256];
-    char choices[4][128];
-    char correctAnswer[128];
+    char* question;
+    char* choices[4];
+    char* correctAnswer;
 } Question;
 
 typedef struct Room {
     int id;
     User players[MAX_PLAYERS];
     int player_count;
-    char votes[MAX_PLAYERS][50];
+    int votes[MAX_PLAYERS];
+    int vote_count;
     int scores[MAX_PLAYERS];
     int answered[MAX_PLAYERS];
     int isOngoing;

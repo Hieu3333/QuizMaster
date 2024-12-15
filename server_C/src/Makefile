@@ -1,5 +1,5 @@
 CC = gcc
-LIBS = -ljansson -ljson-c -lmongoc-1.0 -lbson-1.0 -L/usr/lib/x86_64-linux-gnu -lwebsockets
+LIBS = -ljansson -ljson-c -lmongoc-1.0 -lbson-1.0 -L/usr/lib/x86_64-linux-gnu -lwebsockets -lcurl -lb64
 
 CFLAGS = -Wall -g -I/usr/local/include/libmongoc-1.0 -I/usr/local/include/libbson-1.0 $(shell pkg-config --cflags libwebsockets)
 
