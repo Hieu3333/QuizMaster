@@ -35,11 +35,21 @@ export const Quiz: FC = () => {
           setPlayers(message.data.roomPlayers);
           break;
 
-        case 'startVoting':
-          console.log('start voting');
-          setQuizState('voting');
-          setCategories(message.data.categories);
-          break;
+          case 'startVoting':
+            console.log('start voting');
+            
+    
+            // Transform the categories array into a Record<number, string>
+            const transformedCategories: Record<number, string> = message.data.categories.reduce((acc: Record<number, string>, category: { id: string, name: string }) => {
+              acc[parseInt(category.id)] = category.name;  // Ensure the key is a number (parseInt)
+              return acc;
+            }, {});
+    
+            // Set the transformed categories
+            setCategories(transformedCategories);
+            setQuizState('voting');
+    
+            break;
 
         case 'startMatch':
           setQuizState('playing');
@@ -61,6 +71,11 @@ export const Quiz: FC = () => {
       socket.onmessage = null; // Clean up on unmount
     };
   }, [players, location.state.roomPlayers]);
+
+    useEffect(() => {
+    console.log('categories received:', categories);
+  }, [categories]);
+
 
   useEffect(() => {
     // Handle game over and update the user stats

@@ -8,19 +8,73 @@
 #include "gameplay.h"
 
 
-const char *categories[] = {
-    [9] = "General Knowledge",
-    [11] = "Films",
-    [12] = "Music",
-    [15] = "Videogames",
-    [22] = "Geography",
-    [23] = "History",
+typedef struct {
+    const char *id;
+    const char *name;
+} Category;
+
+// Create an array of categories with string IDs
+Category categories[] = {
+    {"9", "General Knowledge"},
+    {"11", "Films"},
+    {"12", "Music"},
+    {"15", "Videogames"},
+    {"22", "Geography"},
+    {"23", "History"}
 };
 
 // Global variables
 Room* rooms[MAX_ROOMS];
 int room_count = 0;
 
+typedef struct ConnectedUser {
+    struct lws *wsi; // WebSocket instance
+    int id;
+} ConnectedUser;
+
+ConnectedUser *connected_users[MAX_USERS];
+int connected_user_count = 0;
+int next_user_id = 1; 
+// Add a new user to the connected users array
+void add_websocket_user(struct lws *wsi) {
+    if (connected_user_count >= MAX_USERS) {
+        printf("Error: Maximum number of users reached.\n");
+        return;
+    }
+
+    // Create a new connected user entry
+    ConnectedUser *new_user = (ConnectedUser *)malloc(sizeof(ConnectedUser));
+    if (new_user == NULL) {
+        printf("Error: Memory allocation failed for new user.\n");
+        return;
+    }
+
+    // Assign the WebSocket instance and a unique ID
+    new_user->wsi = wsi;
+    new_user->id = next_user_id++;
+
+    // Store the user in the connected_users array
+    connected_users[connected_user_count++] = new_user;
+    printf("User with ID %d connected. Total connected users: %d\n", new_user->id, connected_user_count);
+}
+
+// Remove a user from the connected users array
+void remove_websocket_user(struct lws *wsi) {
+    for (int i = 0; i < connected_user_count; i++) {
+        if (connected_users[i]->wsi == wsi) {
+            printf("User with ID %d disconnected.\n", connected_users[i]->id);
+
+            // Free the memory for the user and shift the array
+            free(connected_users[i]);
+            for (int j = i; j < connected_user_count - 1; j++) {
+                connected_users[j] = connected_users[j + 1];
+            }
+            connected_user_count--;
+            return;
+        }
+    }
+    printf("Error: User not found for disconnection.\n");
+}
 
 
 // Helper function to parse ISO8601 datetime string to time_t
@@ -194,34 +248,10 @@ struct per_session_data__echo {
 // Callback function that handles WebSocket events
 static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len) {
     switch (reason) {
-        // case LWS_CALLBACK_SERVER_WRITEABLE: {
-        //     // Prepare a message to send to the client
-        //     const char *msg = "Hello from the WebSocket server!";
-        //     size_t msg_len = strlen(msg);
-
-        //     // Allocate buffer with LWS_PRE padding
-        //     unsigned char *buf = (unsigned char *) malloc(LWS_PRE + msg_len);
-        //     if (!buf) {
-        //         printf("Memory allocation failed!\n");
-        //         return -1;
-        //     }
-
-        //     // Copy the message into the buffer
-        //     memcpy(buf + LWS_PRE, msg, msg_len);
-
-        //     // Send the message
-        //     int n = lws_write(wsi, buf + LWS_PRE, msg_len, LWS_WRITE_TEXT);
-        //     free(buf);
-
-        //     if (n < 0) {
-        //         printf("Error writing to WebSocket!\n");
-        //         return -1;
-        //     }
-        //     break;
-        // }
 
         case LWS_CALLBACK_ESTABLISHED: {
             printf("New client connected!\n");
+            add_websocket_user(wsi);
             break;
         }
 
@@ -383,15 +413,21 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                     json_t *voting_response_json = json_object();
                     json_t *data_object = json_object(); // New object to hold "data"
                     json_t *categories_array = json_array(); // Array to hold categories
+     
 
                     // Add categories to the array
-                    for (int category_id = 0; category_id < sizeof(categories) / sizeof(categories[0]); category_id++) {
-                        if (categories[category_id]) {
-                            json_t *category_data = json_object();
-                            json_object_set_new(category_data, "id", json_integer(category_id));
-                            json_object_set_new(category_data, "value", json_string(categories[category_id]));
-                            json_array_append_new(categories_array, category_data);
-                        }
+                    for (int i = 0; i < sizeof(categories) / sizeof(categories[0]); i ++) {
+                        // Create a category object
+                        json_t *category_data = json_object();
+                        
+                        // Use the string IDs for "id" (e.g., "9", "11")
+                        json_object_set_new(category_data, "id", json_string(categories[i].id)); // Set "id"
+                        json_object_set_new(category_data, "name", json_string(categories[i].name)); // Set "name"
+
+                        
+
+                        // Add the category object to the categories array
+                        json_array_append_new(categories_array, category_data);
                     }
 
                     // Set the categories inside the "data" object
@@ -411,20 +447,33 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                         return -1;
                     }
 
-                    // Send the voting response via WebSocket
-                    unsigned char *voting_buf = (unsigned char *)voting_response_str;
-                    int len_voting_sent = lws_write(wsi, voting_buf, strlen(voting_response_str), LWS_WRITE_TEXT);
-                    if (len_voting_sent < 0) {
-                        fprintf(stderr, "Error: Failed to send 'startVoting' message to client\n");
-                        json_decref(voting_response_json);
-                        json_decref(parsed_json);
-                        free(user);
-                        return -1;
+                    // Send the voting response to all connected users
+                    for (int i = 0; i < connected_user_count; i++) {
+                        struct lws *current_wsi = connected_users[i]->wsi; // Get the WebSocket instance
+                        if (current_wsi == NULL) {
+                            continue; // Skip invalid WebSocket instances
+                        }
+
+                        // LWS requires a buffer with pre-padding and post-padding
+                        unsigned char buf[LWS_PRE + strlen(voting_response_str)];
+                        memset(buf, 0, sizeof(buf));
+                        memcpy(&buf[LWS_PRE], voting_response_str, strlen(voting_response_str));
+
+                        // Send the message via WebSocket
+                        int len_voting_sent = lws_write(current_wsi, &buf[LWS_PRE], strlen(voting_response_str), LWS_WRITE_TEXT);
+                        if (len_voting_sent < 0) {
+                            fprintf(stderr, "Error: Failed to send 'startVoting' message to client with ID %d\n", connected_users[i]->id);
+                            continue; // Skip failed clients and proceed to the next one
+                        }
                     }
-                    printf("Started voting");
+
+                    // Log the success of sending the message
+                    printf("Started voting for all connected users.\n");
 
                     // Clean up voting response JSON
                     json_decref(voting_response_json);
+                    json_decref(parsed_json);
+                    free(user);
                 }
 
             }
@@ -457,6 +506,8 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
                 case LWS_CALLBACK_CLOSED: {
                     printf("Client disconnected!\n");
+                    // When a client disconnects
+                    remove_websocket_user(wsi);
                     break;
                 }
 

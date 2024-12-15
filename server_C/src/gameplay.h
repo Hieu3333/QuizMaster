@@ -14,6 +14,7 @@
 #define MAX_PLAYERS 2
 #define MAX_ROOMS 10
 #define MAX_QUESTIONS 7
+#define MAX_USERS 10
 typedef struct Question {
     char question[256];
     char choices[4][128];
