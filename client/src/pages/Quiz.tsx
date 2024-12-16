@@ -72,7 +72,11 @@ export const Quiz: FC = () => {
   
       socket.onmessage = null; // Clean up on unmount
     };
-  }, [players, location.state.roomPlayers]);
+  }, [ location.state.roomPlayers]);
+
+  useEffect(()=>{
+    console.log('Players in the room:',players);
+  },[players])
 
 
 
