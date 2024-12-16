@@ -7,27 +7,68 @@ import {
 import { useEffect, useState } from 'react';
 import { PrivateMatchModal } from '../components/PrivateMatchModal';
 import { useAuth } from '../hooks/useAuth';
-import { socket } from '../services/socket';
+import { socket } from '../services/socket';  // Import socket from services
 import { User } from '../types/User';
 
 export const Home = () => {
   const [isPrivateMatchModalOpen, setIsPrivateMatchModalOpen] =
     useState<boolean>(false);
+  const [players, setPlayers] = useState<User[]>([]);
   const { user } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
     document.title = 'QuizMaster';
     if (!user) navigate('../auth');
-  }, []);
 
+    // Handle WebSocket messages
+    socket.onmessage = (event) => {
+  
+      const message = JSON.parse(event.data);
+      console.log(message);
+
+      switch (message.action) {
+        case 'joinRoom':
+          setPlayers(message.data.roomPlayers);
+          console.log(message.data.roomPlayers);
+          if (message.data.playerName === user?.username ){
+            navigate(`../quiz/${message.data.roomId}`, { state: { roomPlayers: message.data.roomPlayers } });
+          }
+          break;
+
+        case 'startVoting':
+          console.log('Voting started', message.data.categories);
+          break;
+
+        case 'startMatch':
+          console.log('Match started', message.data);
+          break;
+
+        case 'gameOver':
+          console.log('Game over', message.data.winnerId);
+          break;
+
+        default:
+          console.log('Unknown message type', message.type);
+      }
+    };
+
+    return () => {
+     
+      socket.onmessage = null;
+    };
+  }, [user, navigate]);
+  
   const findMatch = () => {
-    socket.emit('findMatch', user as User);
+    if (user) {
+      // Send the user data as a stringified JSON object
+      const message = JSON.stringify({
+        action: 'findMatch',
+        data: user,
+      });
 
-    socket.on('joinRoom', ({ roomId, roomPlayers }) => {
-      console.log(roomId, roomPlayers);
-      navigate(`../quiz/${roomId}`, { state: { roomPlayers } });
-    });
+      socket.send(message);  // Use socket.send() to send the message to the server
+    }
   };
 
   const btnStyle =
@@ -42,13 +83,7 @@ export const Home = () => {
             FIND MATCH
             <MagnifyingGlassIcon className={svgStyle} />
           </button>
-          <button
-            className={btnStyle}
-            onClick={() => setIsPrivateMatchModalOpen(true)}
-          >
-            PRIVATE MATCH
-            <LockClosedIcon className={svgStyle} />
-          </button>
+          
           <Link
             to={`../profile/${user?.id}`}
             className={`${btnStyle} flex items-center justify-center`}
@@ -59,11 +94,6 @@ export const Home = () => {
         </div>
       </div>
 
-      {isPrivateMatchModalOpen && (
-        <PrivateMatchModal
-          setIsPrivateMatchModalOpen={setIsPrivateMatchModalOpen}
-        />
-      )}
     </>
   );
 };

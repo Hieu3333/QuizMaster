@@ -23,6 +23,9 @@ User* get_one_by_id( bson_oid_t *id);
 // Function to get a user by their username
 User* get_one_by_username(const char *username);
 
+
+User* get_leaderboard(int quantity, int* result_size);
+
 // Function to check if a user with the given ID exists
 bool persists_by_id(const bson_oid_t *id);
 

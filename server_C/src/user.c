@@ -6,6 +6,7 @@
 #include <time.h>
 #include <mongoc/mongoc.h>
 #include <json-c/json.h>
+#include <bson/bson.h>/
 
 // Helper function to create a User object from a JSON object
 User* json_to_user(const json_object *obj) {
@@ -57,6 +58,11 @@ User* get_one_by_id(bson_oid_t *id) {
     mongoc_client_t *client = get_mongo_client();
     mongoc_collection_t *collection = mongoc_client_get_collection(client, "quizmaster", "User");
 
+    if (!client || !collection) {
+        fprintf(stderr, "Failed to connect to MongoDB.\n");
+        return NULL;
+    }
+
     bson_t *query = bson_new();
     BSON_APPEND_OID(query, "_id", id);  // Query by ObjectId
 
@@ -64,35 +70,25 @@ User* get_one_by_id(bson_oid_t *id) {
     const bson_t *doc = NULL;
 
     if (mongoc_cursor_next(cursor, &doc)) {
-        // Initialize the User struct
-        User *user = (User *)malloc(sizeof(User));  // Allocate memory for the User struct
+        User *user = (User *)malloc(sizeof(User));
         if (!user) {
-            // Handle memory allocation failure
+            fprintf(stderr, "Memory allocation failed.\n");
             bson_destroy(query);
             mongoc_cursor_destroy(cursor);
             mongoc_collection_destroy(collection);
             return NULL;
         }
 
-        // Extract fields directly from BSON document
         bson_iter_t iter;
-
-        // Extract _id field
         if (bson_iter_init_find(&iter, doc, "_id")) {
-            bson_oid_copy(bson_iter_oid(&iter), &user->id);  // Copy the BSON ObjectId into the User struct
+            bson_oid_copy(bson_iter_oid(&iter), &user->id);
         }
-
-        // Extract username field
         if (bson_iter_init_find(&iter, doc, "username")) {
-            user->username = strdup(bson_iter_utf8(&iter, NULL));  // Copy the username string
+            user->username = strdup(bson_iter_utf8(&iter, NULL));
         }
-
-        // Extract password field
         if (bson_iter_init_find(&iter, doc, "password")) {
-            user->password = strdup(bson_iter_utf8(&iter, NULL));  // Copy the password string
+            user->password = strdup(bson_iter_utf8(&iter, NULL));
         }
-
-        // Extract other fields
         if (bson_iter_init_find(&iter, doc, "wins")) {
             user->wins = bson_iter_int32(&iter);
         }
@@ -103,25 +99,33 @@ User* get_one_by_id(bson_oid_t *id) {
             user->playedGames = bson_iter_int32(&iter);
         }
         if (bson_iter_init_find(&iter, doc, "createdAt")) {
-            user->createdAt = bson_iter_int64(&iter);  // Assuming createdAt is a Unix timestamp
+            user->createdAt = bson_iter_int64(&iter);
         }
         if (bson_iter_init_find(&iter, doc, "updatedAt")) {
-            user->updatedAt = bson_iter_int64(&iter);  // Assuming updatedAt is a Unix timestamp
+            user->updatedAt = bson_iter_int64(&iter);
         }
 
         bson_destroy(query);
         mongoc_cursor_destroy(cursor);
         mongoc_collection_destroy(collection);
 
-        return user;  // Return the populated User struct
+        return user;
+    } else {
+        // Debug: Cursor error or no document found
+        bson_error_t error;
+        if (mongoc_cursor_error(cursor, &error)) {
+            fprintf(stderr, "Cursor Error: %s\n", error.message);
+        } 
     }
 
     bson_destroy(query);
     mongoc_cursor_destroy(cursor);
     mongoc_collection_destroy(collection);
 
-    return NULL;  // Return NULL if no user is found
+    return NULL;
 }
+
+
 
 
 User* get_one_by_username(const char *username) {
@@ -200,6 +204,124 @@ User* get_one_by_username(const char *username) {
     return NULL;
 }
 
+#include <mongoc/mongoc.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+// Function to get the leaderboard with a given quantity (number of users)
+// Function to get the leaderboard with a given quantity (number of users)
+User* get_leaderboard(int quantity, int* result_size) {
+    mongoc_client_t *client = get_mongo_client();
+    mongoc_collection_t *collection = mongoc_client_get_collection(client, "quizmaster", "User");
+
+    // Create a query (no specific query, just get all users)
+    bson_t *query = bson_new();
+    if (!query) {
+        fprintf(stderr, "Failed to create query BSON document\n");
+        return NULL;
+    }
+
+    // Create options BSON for sorting by totalScore in descending order and limiting the result to `quantity` users
+    bson_t *opts = bson_new();
+    if (!opts) {
+        fprintf(stderr, "Failed to create options BSON document\n");
+        bson_destroy(query);
+        return NULL;
+    }
+
+    BSON_APPEND_INT32(opts, "limit", quantity);  // Limit the result to `quantity` users
+    BSON_APPEND_DOCUMENT(opts, "sort", BCON_NEW("totalScore", BCON_INT32(-1)));  // Sort by totalScore in descending order
+
+    // Get the users sorted by totalScore with the given limit
+    mongoc_cursor_t *cursor = mongoc_collection_find_with_opts(collection, query, opts, NULL);
+    if (!cursor) {
+        fprintf(stderr, "Failed to create cursor\n");
+        bson_destroy(query);
+        bson_destroy(opts);
+        return NULL;
+    }
+
+    const bson_t *doc = NULL;
+
+    // Allocate memory for storing users (check if memory allocation is successful)
+    User* leaderboard = malloc(sizeof(User) * quantity);
+    if (!leaderboard) {
+        fprintf(stderr, "Memory allocation failed for leaderboard\n");
+        bson_destroy(query);
+        bson_destroy(opts);
+        mongoc_cursor_destroy(cursor);
+        return NULL;
+    }
+
+    *result_size = 0;  // To track how many users are found
+
+    // Iterate over the cursor and extract users
+    while (mongoc_cursor_next(cursor, &doc)) {
+        bson_iter_t iter;
+        User* user = &leaderboard[*result_size];
+
+        // Extract fields directly from BSON document
+        if (bson_iter_init_find(&iter, doc, "_id")) {
+            bson_oid_copy(bson_iter_oid(&iter), &user->id);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "username")) {
+            user->username = strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "password")) {
+            user->password = strdup(bson_iter_utf8(&iter, NULL));
+        }
+
+        if (bson_iter_init_find(&iter, doc, "wins")) {
+            user->wins = bson_iter_int32(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "totalScore")) {
+            user->totalScore = bson_iter_int32(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "playedGames")) {
+            user->playedGames = bson_iter_int32(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "createdAt")) {
+            user->createdAt = bson_iter_int64(&iter);
+        }
+
+        if (bson_iter_init_find(&iter, doc, "updatedAt")) {
+            user->updatedAt = bson_iter_int64(&iter);
+        }
+
+        (*result_size)++;  // Increment the number of users found
+
+        // Stop if we've reached the desired quantity
+        if (*result_size >= quantity) {
+            break;
+        }
+    }
+
+    // If no users found, return NULL
+    if (*result_size == 0) {
+        free(leaderboard);
+        bson_destroy(query);
+        bson_destroy(opts);
+        mongoc_cursor_destroy(cursor);
+        return NULL;
+    }
+
+    // Cleanup resources
+    bson_destroy(query);
+    bson_destroy(opts);
+    mongoc_cursor_destroy(cursor);
+    mongoc_collection_destroy(collection);
+
+    return leaderboard;
+}
+
+
+
+
 
 // Function to check if a user with the given ID exists
 bool persists_by_id(const bson_oid_t *id) {
@@ -256,9 +378,15 @@ void update_user(const bson_oid_t *id, int wins, int totalScore, int playedGames
     bson_t child;
     BSON_APPEND_DOCUMENT_BEGIN(update, "$set", &child);
 
-    BSON_APPEND_INT32(&child, "wins", wins);
-    BSON_APPEND_INT32(&child, "totalScore", totalScore);
-    BSON_APPEND_INT32(&child, "playedGames", playedGames);
+    if (wins >= 0){
+        BSON_APPEND_INT32(&child, "wins", wins);
+    }
+    if (totalScore >=0){
+        BSON_APPEND_INT32(&child, "totalScore", totalScore);
+    }
+    if (playedGames>=0){
+        BSON_APPEND_INT32(&child, "playedGames", playedGames);
+    }
     BSON_APPEND_DATE_TIME(&child, "updatedAt", (int64_t)time(NULL) * 1000);
     bson_append_document_end(update, &child);
 
