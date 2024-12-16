@@ -58,6 +58,11 @@ User* get_one_by_id(bson_oid_t *id) {
     mongoc_client_t *client = get_mongo_client();
     mongoc_collection_t *collection = mongoc_client_get_collection(client, "quizmaster", "User");
 
+    if (!client || !collection) {
+        fprintf(stderr, "Failed to connect to MongoDB.\n");
+        return NULL;
+    }
+
     bson_t *query = bson_new();
     BSON_APPEND_OID(query, "_id", id);  // Query by ObjectId
 
@@ -65,35 +70,26 @@ User* get_one_by_id(bson_oid_t *id) {
     const bson_t *doc = NULL;
 
     if (mongoc_cursor_next(cursor, &doc)) {
-        // Initialize the User struct
-        User *user = (User *)malloc(sizeof(User));  // Allocate memory for the User struct
+        printf("Document found.\n");
+        User *user = (User *)malloc(sizeof(User));
         if (!user) {
-            // Handle memory allocation failure
+            fprintf(stderr, "Memory allocation failed.\n");
             bson_destroy(query);
             mongoc_cursor_destroy(cursor);
             mongoc_collection_destroy(collection);
             return NULL;
         }
 
-        // Extract fields directly from BSON document
         bson_iter_t iter;
-
-        // Extract _id field
         if (bson_iter_init_find(&iter, doc, "_id")) {
-            bson_oid_copy(bson_iter_oid(&iter), &user->id);  // Copy the BSON ObjectId into the User struct
+            bson_oid_copy(bson_iter_oid(&iter), &user->id);
         }
-
-        // Extract username field
         if (bson_iter_init_find(&iter, doc, "username")) {
-            user->username = strdup(bson_iter_utf8(&iter, NULL));  // Copy the username string
+            user->username = strdup(bson_iter_utf8(&iter, NULL));
         }
-
-        // Extract password field
         if (bson_iter_init_find(&iter, doc, "password")) {
-            user->password = strdup(bson_iter_utf8(&iter, NULL));  // Copy the password string
+            user->password = strdup(bson_iter_utf8(&iter, NULL));
         }
-
-        // Extract other fields
         if (bson_iter_init_find(&iter, doc, "wins")) {
             user->wins = bson_iter_int32(&iter);
         }
@@ -104,25 +100,33 @@ User* get_one_by_id(bson_oid_t *id) {
             user->playedGames = bson_iter_int32(&iter);
         }
         if (bson_iter_init_find(&iter, doc, "createdAt")) {
-            user->createdAt = bson_iter_int64(&iter);  // Assuming createdAt is a Unix timestamp
+            user->createdAt = bson_iter_int64(&iter);
         }
         if (bson_iter_init_find(&iter, doc, "updatedAt")) {
-            user->updatedAt = bson_iter_int64(&iter);  // Assuming updatedAt is a Unix timestamp
+            user->updatedAt = bson_iter_int64(&iter);
         }
 
         bson_destroy(query);
         mongoc_cursor_destroy(cursor);
         mongoc_collection_destroy(collection);
 
-        return user;  // Return the populated User struct
+        return user;
+    } else {
+        // Debug: Cursor error or no document found
+        bson_error_t error;
+        if (mongoc_cursor_error(cursor, &error)) {
+            fprintf(stderr, "Cursor Error: %s\n", error.message);
+        } 
     }
 
     bson_destroy(query);
     mongoc_cursor_destroy(cursor);
     mongoc_collection_destroy(collection);
 
-    return NULL;  // Return NULL if no user is found
+    return NULL;
 }
+
+
 
 
 User* get_one_by_username(const char *username) {

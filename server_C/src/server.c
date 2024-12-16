@@ -246,7 +246,9 @@ void handle_leaderboard(int client_sock, const char *quantity_str) {
 
 void handle_get_user_by_id(int client_sock, const char *id_str) {
     // Get the user by ID
-    User *user = get_one_by_id(id_str);
+    bson_oid_t user_id;
+    bson_oid_init_from_string(&user_id, id_str);
+    User *user = get_one_by_id(&user_id);
 
     if (user != NULL) {
         // Convert BSON ObjectId to string
