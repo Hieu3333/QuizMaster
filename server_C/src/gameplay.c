@@ -48,6 +48,55 @@ typedef struct {
 
 #define BUFFER_SIZE 4096
 
+// Function to send JSON message to all users
+void send_message_to_all_users(json_t *response_json, char *action) {
+    // Serialize the JSON object to a string
+    const char *response_str = json_dumps(response_json, 0);
+    printf("%s\n",response_str);
+    if (response_str == NULL) {
+        fprintf(stderr, "Error: Failed to serialize response to JSON.\n");
+        json_decref(response_json);
+        return;
+    }
+
+    // Get the length of the serialized JSON string
+    size_t response_len = strlen(response_str);
+
+    // Allocate buffer with LWS_PRE padding
+    unsigned char *buf = malloc(LWS_PRE + response_len);
+    if (!buf) {
+        fprintf(stderr, "Error: Memory allocation failed.\n");
+        free((void *)response_str);
+        json_decref(response_json);
+        return;
+    }
+
+    // Fill the buffer with the serialized JSON message
+    memcpy(&buf[LWS_PRE], response_str, response_len);
+
+    // Send the message to each connected user
+    for (int i = 0; i < connected_user_count; i++) {
+        struct lws *current_wsi = connected_users[i]->wsi; // Get the WebSocket instance
+        if (current_wsi == NULL) {
+            printf("User %d is invalid, cant send message",connected_users[i]->id);
+            continue; // Skip invalid WebSocket instances
+        }
+
+        // Send the message via WebSocket
+        int len_voting_sent = lws_write(current_wsi, &buf[LWS_PRE], response_len, LWS_WRITE_TEXT);
+        if (len_voting_sent < 0) {
+            fprintf(stderr, "Error: Failed to send 'startMatch' message to client with ID %d\n", connected_users[i]->id);
+        } else {
+            printf("Sent %s message to client %d\n", action, connected_users[i]->id);
+        }
+    }
+
+    // Cleanup
+    free(buf);
+    free((void *)response_str);
+    json_decref(response_json);
+}
+
 // Write callback function to store response data
 size_t write_callback(void *ptr, size_t size, size_t nmemb, char *data) {
     size_t total_size = size * nmemb;
@@ -489,6 +538,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 if (room_id <= room_count) {
                     // Room was found or created, create the response accordingly
                     json_object_set_new(room_data, "roomId", json_integer(room_id));
+                    json_object_set_new(room_data, "playerName", json_string(user->username));
                     int room_access_id = room_id-1;
 
                     json_t *players_array = json_array(); // Create an array of players
@@ -536,47 +586,8 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                     json_object_set_new(response_json, "data", room_data);
                 }
 
-                // Serialize the response to JSON
-                const char *response_str = json_dumps(response_json, 0);
-                if (response_str == NULL) {
-                    fprintf(stderr, "Error: Failed to serialize response to JSON.\n");
-                    json_decref(message_json);
-                    free(user);
-                    return -1;
-                }
-
-                // Get the length of the serialized JSON string
-                size_t response_len = strlen(response_str);
-
-                // Allocate buffer with LWS_PRE padding
-                unsigned char *buf = malloc(LWS_PRE + response_len);
-                if (!buf) {
-                    fprintf(stderr, "Error: Memory allocation failed.\n");
-                    json_decref(message_json);
-                    free(user);
-                    free((void *)response_str);
-                    return -1;
-                }
-
-                // Copy the JSON string into the buffer after LWS_PRE
-                memcpy(buf + LWS_PRE, response_str, response_len);
-
-                // Send the message via WebSocket
-                int len_sent = lws_write(wsi, buf + LWS_PRE, response_len, LWS_WRITE_TEXT);
-                if (len_sent < 0) {
-                    fprintf(stderr, "Error: Failed to send message to client.\n");
-                    free(buf);
-                    json_decref(message_json);
-                    free(user);
-                    free((void *)response_str);
-                    return -1;
-                }
-
-                // Cleanup
-                free(buf);
-                json_decref(message_json);
+                send_message_to_all_users(response_json,"joinRoom");
                 free(user);
-                free((void *)response_str);
 
                 
 
@@ -612,43 +623,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                     json_object_set_new(voting_response_json, "action", json_string("startVoting"));
                     json_object_set_new(voting_response_json, "data", data_object);
 
-                    // Serialize the voting response
-                    const char *voting_response_str = json_dumps(voting_response_json, 0);
-                    if (voting_response_str == NULL) {
-                        fprintf(stderr, "Error: Failed to serialize 'startVoting' response to JSON.\n");
-                        json_decref(voting_response_json);
-                   
-                        // free(user);
-                        return -1;
-                    }
-
-                    // Send the voting response to all connected users
-                    for (int i = 0; i < connected_user_count; i++) {
-                        struct lws *current_wsi = connected_users[i]->wsi; // Get the WebSocket instance
-                        if (current_wsi == NULL) {
-                            continue; // Skip invalid WebSocket instances
-                        }
-
-                        // LWS requires a buffer with pre-padding and post-padding
-                        unsigned char buf[LWS_PRE + strlen(voting_response_str)];
-                        memset(buf, 0, sizeof(buf));
-                        memcpy(&buf[LWS_PRE], voting_response_str, strlen(voting_response_str));
-
-                        // Send the message via WebSocket
-                        int len_voting_sent = lws_write(current_wsi, &buf[LWS_PRE], strlen(voting_response_str), LWS_WRITE_TEXT);
-                        if (len_voting_sent < 0) {
-                            fprintf(stderr, "Error: Failed to send 'startVoting' message to client with ID %d\n", connected_users[i]->id);
-                            continue; // Skip failed clients and proceed to the next one
-                        }
-                    }
-
-                    // Log the success of sending the message
-                    printf("Started voting for all connected users.\n");
-
-                    // Clean up voting response JSON
-                    json_decref(voting_response_json);
-        
-                    // free(user);
+                    send_message_to_all_users(voting_response_json,"startVoting");
                 }
 
             }
@@ -688,12 +663,10 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                         voting_player = player;
                         current_room_id = i;
                         rooms[i]->votes[rooms[i]->vote_count++] = atoi(category_name);
-
                         break;
                     }
                 }
                 if (voting_player) {
-
                     break;
                 }
             }
@@ -705,74 +678,74 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
             }
 
             // Process the vote
-            printf("Player %s  voted for category '%s'\n", voting_player->username,  category_name);
+            printf("Player %s voted for category '%s'\n", voting_player->username, category_name);
             
             // Check if the votes have reached MAX_PLAYERS
-        if (rooms[current_room_id]->vote_count == MAX_PLAYERS) {
-            // Find the category with the maximum votes
-            int category_votes[100] = {0};  // Assuming there are 100 possible categories
-            for (int i = 0; i < rooms[current_room_id]->vote_count; i++) {
-                category_votes[rooms[current_room_id]->votes[i]]++;
-            }
-
-            int max_votes = 0;
-            int selected_category = -1;
-            for (int i = 0; i < 100; i++) {
-                if (category_votes[i] > max_votes) {
-                    max_votes = category_votes[i];
-                    selected_category = i;
+            if (rooms[current_room_id]->vote_count == MAX_PLAYERS) {
+                // Find the category with the maximum votes
+                rooms[current_room_id]->isOngoing=1;
+                int category_votes[100] = {0};  // Assuming there are 100 possible categories
+                for (int i = 0; i < rooms[current_room_id]->vote_count; i++) {
+                    category_votes[rooms[current_room_id]->votes[i]]++;
                 }
-            }
 
-            printf("Category %d has the most votes (%d votes)\n", selected_category, max_votes);
+                int max_votes = 0;
+                int selected_category = -1;
+                for (int i = 0; i < 100; i++) {
+                    if (category_votes[i] > max_votes) {
+                        max_votes = category_votes[i];
+                        selected_category = i;
+                    }
+                }
 
-            int result = 0;         // Number of fetched questions
+                printf("Category %d has the most votes (%d votes)\n", selected_category, max_votes);
 
-            // Create thread arguments
-            FetchQuestionsArgs fetch_args;
-            fetch_args.category = selected_category;
-            fetch_args.questions = questions;
-            fetch_args.result = &result;
+                int result = 0;         // Number of fetched questions
 
-            // Create a thread
-            pthread_t thread_id;
-            if (pthread_create(&thread_id, NULL, fetch_questions_thread, &fetch_args) != 0) {
-                fprintf(stderr, "Error: Failed to create thread.\n");
-                return -1;
-            }
+                // Create thread arguments
+                FetchQuestionsArgs fetch_args;
+                fetch_args.category = selected_category;
+                fetch_args.questions = questions;
+                fetch_args.result = &result;
 
-            // Wait for the thread to finish
-            if (pthread_join(thread_id, NULL) != 0) {
-                fprintf(stderr, "Error: Failed to join thread.\n");
-                return -1;
-            }
+                // Create a thread to fetch questions
+                pthread_t thread_id;
+                if (pthread_create(&thread_id, NULL, fetch_questions_thread, &fetch_args) != 0) {
+                    fprintf(stderr, "Error: Failed to create thread.\n");
+                    return -1;
+                }
 
-            // Check the result
-            if (result > 0) {
-            printf("Fetched %d questions successfully:\n", result);
-            for (int i = 0; i < result; i++) {
-                if (questions[i].question == NULL) {
-                    fprintf(stderr, "Error: Invalid question o at index %d\n", i);
+                // Wait for the thread to finish
+                if (pthread_join(thread_id, NULL) != 0) {
+                    fprintf(stderr, "Error: Failed to join thread.\n");
+                    return -1;
+                }
+
+                // Check the result
+                if (result > 0) {
+                    printf("Fetched %d questions successfully:\n", result);
+                    // Prepare the message to send back to the client
+                    json_t *response_json = json_object();
+                    json_object_set_new(response_json, "action", json_string("startMatch"));
+                    json_object_set_new(response_json, "category", json_string(category_name));
+
+                    // Send the first question as part of the data
+                    json_t *first_question_json = json_object();
+                    json_object_set_new(first_question_json, "question", json_string(questions[0].question));
+                    json_t *choices_json = json_array();
+                    for (int j = 0; j < 4; j++) {
+                        json_array_append_new(choices_json, json_string(questions[0].choices[j]));
+                    }
+                    json_object_set_new(first_question_json, "choices", choices_json);
+                    json_object_set_new(response_json, "firstQuestion", first_question_json);
+
+                    send_message_to_all_users(response_json,"startMatch");
                 } else {
-                    printf("Q%d: %s\n", i, questions[i].question);
-                }
-
-                for (int j = 0; j < 4; j++) {
-                    printf("  - %s\n", questions[i].choices[j]);
+                    fprintf(stderr, "Failed to fetch questions.\n");
                 }
             }
-        } else {
-            fprintf(stderr, "Failed to fetch questions.\n");
-        }
-            
-
-            
         }
 
-
-
-            
-        }
 
 
               else if (strcmp(action_str, "answer") == 0) {

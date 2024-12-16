@@ -27,6 +27,7 @@ export const Quiz: FC = () => {
 
     // Listening to messages from the WebSocket server
     socket.onmessage = (event) => {
+     
       const message = JSON.parse(event.data);
       console.log(message);
       
@@ -53,8 +54,8 @@ export const Quiz: FC = () => {
 
         case 'startMatch':
           setQuizState('playing');
-          setCategory(message.data.category);
-          setFirstQuestion(message.data.firstQuestion);
+          setCategory(message.category);
+          setFirstQuestion(message.firstQuestion);
           break;
 
         case 'gameOver':
@@ -68,13 +69,11 @@ export const Quiz: FC = () => {
     };
 
     return () => {
+  
       socket.onmessage = null; // Clean up on unmount
     };
   }, [players, location.state.roomPlayers]);
 
-    useEffect(() => {
-    console.log('categories received:', categories);
-  }, [categories]);
 
 
   useEffect(() => {

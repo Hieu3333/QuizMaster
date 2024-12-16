@@ -15,19 +15,19 @@ export const Voting: FC<VotingProps> = ({ categories }) => {
     document.title = 'QuizMaster | Voting';
 
     // Listen for vote result updates via WebSocket
-    socket.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      if (message.action === 'voteResult') {
-        const { playerId } = message.data;
-        if (playerId === user?.id) {
-          setHasVoted(true); // Mark that the user has voted after receiving confirmation
-        }
-      }
-    };
+    // socket.onmessage = (event) => {
+    //   const message = JSON.parse(event.data);
+    //   if (message.action === 'voteResult') {
+    //     const { playerId } = message.data;
+    //     if (playerId === user?.id) {
+    //       setHasVoted(true); // Mark that the user has voted after receiving confirmation
+    //     }
+    //   }
+    // };
 
-    return () => {
-      socket.onmessage = null; // Cleanup the WebSocket message handler when the component unmounts
-    };
+    // return () => {
+    //   socket.onmessage = null; // Cleanup the WebSocket message handler when the component unmounts
+    // };
   }, [user?.id]);
 
   const handleVote = (key: string) => {

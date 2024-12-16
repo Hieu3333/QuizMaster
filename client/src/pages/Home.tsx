@@ -23,6 +23,7 @@ export const Home = () => {
 
     // Handle WebSocket messages
     socket.onmessage = (event) => {
+  
       const message = JSON.parse(event.data);
       console.log(message);
 
@@ -30,7 +31,9 @@ export const Home = () => {
         case 'joinRoom':
           setPlayers(message.data.roomPlayers);
           console.log(message.data.roomPlayers);
-          navigate(`../quiz/${message.data.roomId}`, { state: { roomPlayers: message.data.roomPlayers } });
+          if (message.data.playerName === user?.username ){
+            navigate(`../quiz/${message.data.roomId}`, { state: { roomPlayers: message.data.roomPlayers } });
+          }
           break;
 
         case 'startVoting':
@@ -51,10 +54,11 @@ export const Home = () => {
     };
 
     return () => {
+     
       socket.onmessage = null;
     };
   }, [user, navigate]);
-
+  
   const findMatch = () => {
     if (user) {
       // Send the user data as a stringified JSON object

@@ -2,7 +2,7 @@ import { User } from './User';
 import { Question } from './Question';
 
 export interface ServerToClientMessages {
-  joinRoom: { roomId: number; roomPlayers: User[] };
+  joinRoom: { roomId: number; playerName:string; roomPlayers: User[] };
   createdRoom: { roomId: number };
   startVoting: { categories: Record<number, string> };
   startMatch: { category: string; firstQuestion: Question };
