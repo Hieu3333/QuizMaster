@@ -12,6 +12,8 @@ interface MatchProps {
   firstQuestion: Question;
   players: User[];
   setPlayers: React.Dispatch<React.SetStateAction<User[]>>;
+  setQuizState: React.Dispatch<React.SetStateAction<'waiting' | 'voting' | 'playing' | 'end'>>; // Add setQuizState prop
+  setWinner: React.Dispatch<React.SetStateAction<User | undefined>>;
 }
 
 export const Match: FC<MatchProps> = ({
@@ -19,19 +21,23 @@ export const Match: FC<MatchProps> = ({
   firstQuestion,
   players,
   setPlayers,
+  setQuizState, // Accept the prop
+  setWinner
 }) => {
   const { user, update } = useAuth();
   const [hasAnswered, setHasAnswered] = useState<boolean>(false);
   const [updatedUser, setUpdatedUser] = useState<User>(user as User);
   const [currentQuestion, setCurrentQuestion] = useState<Question>(firstQuestion);
   const [hints, setHints] = useState<string[]>([]);
+  const [action,setAction] = useState('');
 
   useEffect(() => {
     document.title = `QuizMaster | ${category}`;
 
-    // WebSocket event listener for answer results
+    // WebSocket event listener for answer results and gameOver
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
+
       if (message.action === 'answerResult') {
         const { isCorrect, playerId, answer } = message.data;
 
@@ -85,12 +91,19 @@ export const Match: FC<MatchProps> = ({
         setHints([]);
         setHasAnswered(false);
       }
+
+      if (message.action === 'gameOver') {
+        const winnerId = message.data.winnerId;
+        const winner = players.find((player) => player.id === winnerId);
+        setWinner(winner);
+        setQuizState('end');
+      }
     };
 
     return () => {
       socket.onmessage = null; // Clean up on unmount
     };
-  }, [updatedUser, user?.id, players]);
+  }, [updatedUser, user?.id, players, setWinner]);
 
   const handleAnswer = (answer: string) => {
     if (hasAnswered) return;

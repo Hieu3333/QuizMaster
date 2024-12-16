@@ -375,9 +375,15 @@ void update_user(const bson_oid_t *id, int wins, int totalScore, int playedGames
     bson_t child;
     BSON_APPEND_DOCUMENT_BEGIN(update, "$set", &child);
 
-    BSON_APPEND_INT32(&child, "wins", wins);
-    BSON_APPEND_INT32(&child, "totalScore", totalScore);
-    BSON_APPEND_INT32(&child, "playedGames", playedGames);
+    if (wins >= 0){
+        BSON_APPEND_INT32(&child, "wins", wins);
+    }
+    if (totalScore >=0){
+        BSON_APPEND_INT32(&child, "totalScore", totalScore);
+    }
+    if (playedGames>=0){
+        BSON_APPEND_INT32(&child, "playedGames", playedGames);
+    }
     BSON_APPEND_DATE_TIME(&child, "updatedAt", (int64_t)time(NULL) * 1000);
     bson_append_document_end(update, &child);
 

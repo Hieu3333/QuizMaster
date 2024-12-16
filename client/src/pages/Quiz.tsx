@@ -121,6 +121,8 @@ export const Quiz: FC = () => {
           firstQuestion={firstQuestion as Question}
           players={players}
           setPlayers={setPlayers}
+          setQuizState={setQuizState}
+          setWinner={setWinner}
         />
       )}
       {quizState === 'end' && <End winner={winner as User} players={players} />}

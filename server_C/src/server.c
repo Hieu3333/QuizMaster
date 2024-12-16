@@ -288,46 +288,59 @@ void handle_get_user_by_id(int client_sock, const char *id_str) {
 }
 
 // Helper function to handle /api/users/:id (PATCH) request
+
+
 void handle_update_user(int client_sock, const char *id_str, const char *body) {
     // Parse the request body
-    struct json_object *parsed_json = json_tokener_parse(body);
+    json_error_t error;
+    json_t *parsed_json = json_loads(body, 0, &error);
     if (!parsed_json) {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid JSON\"}");
         return;
     }
 
-    struct json_object *wins_obj, *totalScore_obj, *playedGames_obj;
+    // Declare variables for the extracted values
+    json_t *wins_obj = NULL, *totalScore_obj = NULL, *playedGames_obj = NULL;
     int wins = -1, totalScore = -1, playedGames = -1;
 
     // Extract fields from JSON, if present
-    if (json_object_object_get_ex(parsed_json, "wins", &wins_obj)) {
-        wins = json_object_get_int(wins_obj);
-    }
-    if (json_object_object_get_ex(parsed_json, "totalScore", &totalScore_obj)) {
-        totalScore = json_object_get_int(totalScore_obj);
-    }
-    if (json_object_object_get_ex(parsed_json, "playedGames", &playedGames_obj)) {
-        playedGames = json_object_get_int(playedGames_obj);
+    wins_obj = json_object_get(parsed_json, "wins");
+    if (wins_obj && json_is_integer(wins_obj)) {
+        wins = (int)json_integer_value(wins_obj);
     }
 
-    // Validate the extracted values (optional, adjust based on your requirements)
-    if (wins < 0 || totalScore < 0 || playedGames < 0) {
+    totalScore_obj = json_object_get(parsed_json, "totalScore");
+    if (totalScore_obj && json_is_integer(totalScore_obj)) {
+        totalScore = (int)json_integer_value(totalScore_obj);
+    }
+
+    playedGames_obj = json_object_get(parsed_json, "playedGames");
+    if (playedGames_obj && json_is_integer(playedGames_obj)) {
+        playedGames = (int)json_integer_value(playedGames_obj);
+    }
+
+    // Validate the extracted values if necessary
+    if (wins < 0 && totalScore < 0 && playedGames < 0) {
         send_http_response(client_sock, 400, "Bad Request", "application/json", "{\"error\": \"Invalid or missing fields\"}");
-        json_object_put(parsed_json);  // Free parsed JSON object
+        json_decref(parsed_json);  // Free parsed JSON object
         return;
     }
 
-    // Convert the user ID from string to bson_oid_t
+    // Convert the user ID from string to bson_oid_t (this part remains the same)
     bson_oid_t user_id;
+    bson_oid_init_from_string(&user_id, id_str);
 
-    // Update user data
+    // Update user data (Assuming update_user function exists and is defined elsewhere)
     update_user(&user_id, wins, totalScore, playedGames);
 
     // Prepare success response
     send_http_response(client_sock, 200, "OK", "application/json", "{\"message\": \"User updated successfully\"}");
+    printf("200 PATCH /api/users/%s\n ",id_str);
 
-    json_object_put(parsed_json);  // Free parsed JSON object
+    // Free parsed JSON object
+    json_decref(parsed_json);
 }
+
 
 // Function to handle client requests
 void handle_client(int client_sock) {

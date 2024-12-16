@@ -182,10 +182,10 @@ void fetch_questions_thread(void *args) {
         json_t *question_data = json_array_get(results, i);
 
         // Allocate memory for each question, choices, and correctAnswer
-        questions[i].question = (char *)malloc(500 * sizeof(char));
-        questions[i].correctAnswer = (char *)malloc(256 * sizeof(char));
+        // questions[i].question = (char *)malloc(500 * sizeof(char));
+        // questions[i].correctAnswer = (char *)malloc(256 * sizeof(char));
         for (int j = 0; j < 4; j++) {
-            questions[i].choices[j] = (char *)malloc(256 * sizeof(char));
+            // questions[i].choices[j] = (char *)malloc(256 * sizeof(char));
             if (questions[i].choices[j] == NULL) {
                 fprintf(stderr, "Memory allocation failed for choice %d\n", j);
                 *result = -1;
@@ -429,7 +429,12 @@ int create_new_room(User *user) {
     new_room->players[0] = *user;    // Add the user to the room
     new_room->player_count = 1;      // One player in the room
     new_room->vote_count = 0;
+    new_room->answer_count = 0;
     new_room->isOngoing = 0;         // Game is not yet started
+    for (int i = 0; i < MAX_PLAYERS; i++) {
+    new_room->answered[i] = 0;  // Initialize as 0
+    }
+
 
     // Convert BSON Object ID to string
     char id_str[25];  // Buffer to hold the string representation of the BSON Object ID
@@ -465,9 +470,6 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 fprintf(stderr, "Error: Invalid input data (NULL or length <= 0)\n");
                 return -1;
             }
-
-            // Print the message length
-            printf("Length: %d\n", (int)len);
 
             // Ensure that the length is valid for accessing memory
             // Null-terminate the string in case it isn't
@@ -699,6 +701,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 }
 
                 printf("Category %d has the most votes (%d votes)\n", selected_category, max_votes);
+                
 
                 int result = 0;         // Number of fetched questions
 
@@ -724,6 +727,17 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 // Check the result
                 if (result > 0) {
                     printf("Fetched %d questions successfully:\n", result);
+
+                    // Iterate over all fetched questions and copy them to room->questions
+                    for (int i = 0; i < result; i++) {
+
+                        snprintf(rooms[current_room_id]->questions[i].question, sizeof(rooms[current_room_id]->questions[i].question), "%s", questions[i].question);
+                        snprintf(rooms[current_room_id]->questions[i].correctAnswer, sizeof(rooms[current_room_id]->questions[i].correctAnswer), "%s", questions[i].correctAnswer);
+
+                        for (int j = 0; j < 4; j++) {
+                            snprintf(rooms[current_room_id]->questions[i].choices[j], sizeof(rooms[current_room_id]->questions[i].choices[j]), "%s", questions[i].choices[j]);
+                        }
+                    }
                     // Prepare the message to send back to the client
                     json_t *response_json = json_object();
                     json_object_set_new(response_json, "action", json_string("startMatch"));
@@ -751,7 +765,161 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
               else if (strcmp(action_str, "answer") == 0) {
                 // Handle "answer" logic
                 printf("answer action received\n");
-                // Evaluate answer and manage scoring
+                json_t *answer_data_json = json_object_get(message_json, "data");
+                if (!answer_data_json || !json_is_object(answer_data_json)) {
+                fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n");
+                json_decref(message_json);  // Free JSON object
+                return -1;
+            }
+
+            // Extract category and playerId from data
+            const char *answer = json_string_value(json_object_get(answer_data_json, "answer"));
+            const char *player_id_str = json_string_value(json_object_get(answer_data_json, "playerId"));
+
+            if (!answer || !player_id_str) {
+                fprintf(stderr, "Error: Missing 'answer' or 'playerId' in vote data.\n");
+                json_decref(message_json);  // Free JSON object
+                return -1;
+            }
+            // Find the room the player is in
+            Room* room = NULL;
+            bson_oid_t player_oid;
+            int player_id;
+            bson_oid_init_from_string(&player_oid, player_id_str);
+            for (int i = 0; i < room_count; i++) {
+                for (int j = 0; j < rooms[i]->player_count; j++) {
+                    if (bson_oid_compare(&rooms[i]->players[j].id, &player_oid) == 0) {
+                        room = rooms[i];
+                        player_id = j;
+                        break;
+                    }
+                }
+                if (room) break;
+            }
+
+            if (!room) {
+                fprintf(stderr, "Error: Room not found for player %s.\n", player_id_str);
+                json_decref(message_json);  // Free JSON object
+                return -1;
+            }
+
+            // Check if the player has already answered
+            if (room->answered[player_id] == 1){
+                printf("Player already answered");
+            }else{
+                // Mark the player as having answered
+            room->answered[player_id]=1;
+            room->answer_count++;
+            }
+
+            
+
+            // Get the current question from the room
+            Question* current_question = &room->questions[room->currentQuestion];
+            int is_correct = (strcmp(answer, current_question->correctAnswer) == 0);
+
+            // Update the player's score if the answer is correct
+            if (is_correct) {
+                for (int i = 0; i < room->player_count; i++) {
+                    if (bson_oid_compare(&room->players[i].id, &player_oid) == 0) {
+                        room->scores[i]++;
+                        break;
+                    }
+                }
+            }
+
+            // Create the answer result JSON
+            json_t* result_json = json_object();
+
+            // Set the action field
+            json_object_set_new(result_json, "action", json_string("answerResult"));
+
+            // Create a data object
+            json_t* data_json = json_object();
+
+            // Set the fields inside the data object
+            json_object_set_new(data_json, "isCorrect", json_boolean(is_correct));
+            json_object_set_new(data_json, "playerId", json_string(player_id_str));
+            json_object_set_new(data_json, "answer", json_string(answer));
+
+            // Add the data object to the result_json under the "data" field
+            json_object_set_new(result_json, "data", data_json);
+
+            // Send the result to all users
+            send_message_to_all_users(result_json, "answerResult");
+            printf("Answer count %d\n",room->answer_count);
+
+            // Check if all players have answered or if the current question is complete
+            if (room->answer_count >= room->player_count || is_correct) {
+                // Reset answered players for the next question
+                room->answer_count = 0;
+                for (int k=0; k<room->player_count; k++){
+                    room->answered[k]=0;
+                }
+
+                // Move to the next question if available
+                room->currentQuestion++;
+                if (room->currentQuestion < MAX_QUESTIONS) {
+                    json_t* result_json = json_object();
+
+                    // Set the "action" field
+                    json_object_set_new(result_json, "action", json_string("nextQuestion"));
+
+                    // Create the "data" field as a JSON object
+                    json_t* data_json = json_object();
+
+                    // Add the question to the "data" field
+                    json_object_set_new(data_json, "question", json_string(room->questions[room->currentQuestion].question));
+
+                    // Create and add the choices to the "data" field
+                    json_t* choices_json = json_array();
+                    for (int j = 0; j < 4; j++) {
+                        json_array_append_new(choices_json, json_string(room->questions[room->currentQuestion].choices[j]));
+                    }
+                    json_object_set_new(data_json, "choices", choices_json);
+
+                    // Set the "data" field in the result JSON
+                    json_object_set_new(result_json, "data", data_json);
+
+                    // Send the result JSON to all users with the action "nextQuestion"
+                    send_message_to_all_users(result_json, "nextQuestion");
+
+                } else {
+                    // If no more questions, game over
+                    bson_oid_t winner_id;
+                    int highest_score = -1;
+                    for (int i = 0; i < room->player_count; i++) {
+                        if (room->scores[i] > highest_score) {
+                            highest_score = room->scores[i];
+                            winner_id = room->players[i].id;
+                        }
+                    }
+
+                    json_t* game_over_json = json_object();         // Main JSON object
+                    json_t* data_json = json_object();             // Nested data object
+
+                    // Convert the winner_id BSON ObjectID to a string
+                    char str_id[25];
+                    bson_oid_to_string(&winner_id, str_id);
+
+                    // Set winnerId in the nested data object
+                    json_object_set_new(data_json, "winnerId", json_string(str_id));
+
+                    // Set the action and data fields in the main JSON object
+                    json_object_set_new(game_over_json, "action", json_string("gameOver"));
+                    json_object_set_new(game_over_json, "data", data_json);
+
+                    // Send the message to all users
+                    send_message_to_all_users(game_over_json, "gameOver");
+
+                    // Reset the game or remove the room if necessary
+                    room->currentQuestion = 0;
+                    room->vote_count = 0;
+                    room->player_count = 0;
+                }
+            }
+
+            json_decref(message_json);  // Free JSON object
 
             } else {
                 // If action is unrecognized, respond with an error
