@@ -132,7 +132,7 @@ void fetch_questions_thread(void *args) {
     char url[512];
 
     // Initialize the URL for the API request
-    snprintf(url, sizeof(url), "%s?amount=7&category=%d&difficulty=easy&type=multiple&encode=base64", api_url, category);
+    snprintf(url, sizeof(url), "%s?amount=7&category=%d&difficulty=hard&type=multiple&encode=base64", api_url, category);
 
     // Initialize CURL
     curl = curl_easy_init();
