@@ -70,7 +70,6 @@ User* get_one_by_id(bson_oid_t *id) {
     const bson_t *doc = NULL;
 
     if (mongoc_cursor_next(cursor, &doc)) {
-        printf("Document found.\n");
         User *user = (User *)malloc(sizeof(User));
         if (!user) {
             fprintf(stderr, "Memory allocation failed.\n");

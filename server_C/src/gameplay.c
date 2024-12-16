@@ -505,7 +505,6 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
             if (strcmp(action_str, "findMatch") == 0) {
                 // Handle "findMatch" logic
-                printf("findMatch action received\n");
 
                 // Extract 'data' field from JSON
                 json_t *user_json = json_object_get(message_json, "data");
@@ -632,7 +631,6 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
             if (strcmp(action_str, "vote") == 0) {
             // Handle "vote" logic
-            printf("Vote action received\n");
 
             // Extract 'data' field from JSON
             json_t *vote_data_json = json_object_get(message_json, "data");
@@ -764,7 +762,6 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
               else if (strcmp(action_str, "answer") == 0) {
                 // Handle "answer" logic
-                printf("answer action received\n");
                 json_t *answer_data_json = json_object_get(message_json, "data");
                 if (!answer_data_json || !json_is_object(answer_data_json)) {
                 fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n");
@@ -847,7 +844,6 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
             // Send the result to all users
             send_message_to_all_users(result_json, "answerResult");
-            printf("Answer count %d\n",room->answer_count);
 
             // Check if all players have answered or if the current question is complete
             if (room->answer_count >= room->player_count || is_correct) {
