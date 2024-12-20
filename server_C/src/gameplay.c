@@ -960,6 +960,7 @@ int start_server() {
     struct lws_context_creation_info info;
     memset(&info, 0, sizeof(info));
     info.port = GAMEPLAY_PORT;
+    info.iface = NULL; // NULL means bind to all available interfaces
     info.protocols = (struct lws_protocols[]){{"http", callback_websocket, 0, 0}, {NULL, NULL, 0, 0}};
     struct lws_context *context = lws_create_context(&info);
     if (!context) {
