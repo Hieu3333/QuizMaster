@@ -417,10 +417,18 @@ void *main_server_thread(void *arg) {
         exit(EXIT_FAILURE);
     }
 
+    // Allow address reuse (useful for restarting the server quickly)
+    int opt = 1;
+    if (setsockopt(server_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
+        perror("setsockopt(SO_REUSEADDR) failed");
+        close(server_sock);
+        exit(EXIT_FAILURE);
+    }
+
     // Bind the socket to the port
     struct sockaddr_in server_addr = {0};
     server_addr.sin_family = AF_INET;
-    server_addr.sin_addr.s_addr = INADDR_ANY;
+    server_addr.sin_addr.s_addr = htonl(INADDR_ANY); // Bind to all available interfaces
     server_addr.sin_port = htons(PORT);
 
     if (bind(server_sock, (struct sockaddr *)&server_addr, sizeof(server_addr)) < 0) {
@@ -445,13 +453,15 @@ void *main_server_thread(void *arg) {
             perror("Accept failed");
             continue;
         }
-        handle_client(client_sock);
+        printf("Accepted connection from a client.\n");
+        handle_client(client_sock); // Function to handle client communication
     }
 
     // Clean up
     close(server_sock);
     pthread_exit(NULL);
 }
+
 
 int main() {
     // Initialize MongoDB connection

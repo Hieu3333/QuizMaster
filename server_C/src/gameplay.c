@@ -132,7 +132,7 @@ void fetch_questions_thread(void *args) {
     char url[512];
 
     // Initialize the URL for the API request
-    snprintf(url, sizeof(url), "%s?amount=7&category=%d&difficulty=easy&type=multiple&encode=base64", api_url, category);
+    snprintf(url, sizeof(url), "%s?amount=7&category=%d&difficulty=hard&type=multiple&encode=base64", api_url, category);
 
     // Initialize CURL
     curl = curl_easy_init();
@@ -960,6 +960,7 @@ int start_server() {
     struct lws_context_creation_info info;
     memset(&info, 0, sizeof(info));
     info.port = GAMEPLAY_PORT;
+    info.iface = NULL; // NULL means bind to all available interfaces
     info.protocols = (struct lws_protocols[]){{"http", callback_websocket, 0, 0}, {NULL, NULL, 0, 0}};
     struct lws_context *context = lws_create_context(&info);
     if (!context) {
