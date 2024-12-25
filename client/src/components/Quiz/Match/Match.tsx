@@ -1,18 +1,19 @@
 import { FC, useEffect, useState } from 'react';
 import { useAuth } from '../../../hooks/useAuth';
 import { updateUser } from '../../../services/requests';
-import { socket } from '../../../services/socket';  // Update import for WebSocket connection
+import { socket } from '../../../services/socket';
 import { Question } from '../../../types/Question';
 import { User } from '../../../types/User';
 import { Answers } from './Answers';
 import { Scoreboard } from './Scoreboard';
+import { useNavigate } from 'react-router-dom';
 
 interface MatchProps {
   category: string;
   firstQuestion: Question;
   players: User[];
   setPlayers: React.Dispatch<React.SetStateAction<User[]>>;
-  setQuizState: React.Dispatch<React.SetStateAction<'waiting' | 'voting' | 'playing' | 'end'>>; // Add setQuizState prop
+  setQuizState: React.Dispatch<React.SetStateAction<'waiting' | 'voting'  | 'playing' | 'end'>>;
   setWinner: React.Dispatch<React.SetStateAction<User | undefined>>;
 }
 
@@ -21,20 +22,20 @@ export const Match: FC<MatchProps> = ({
   firstQuestion,
   players,
   setPlayers,
-  setQuizState, // Accept the prop
-  setWinner
+  setQuizState,
+  setWinner,
 }) => {
   const { user, update } = useAuth();
+  const navigate = useNavigate();
   const [hasAnswered, setHasAnswered] = useState<boolean>(false);
   const [updatedUser, setUpdatedUser] = useState<User>(user as User);
   const [currentQuestion, setCurrentQuestion] = useState<Question>(firstQuestion);
   const [hints, setHints] = useState<string[]>([]);
-  const [action,setAction] = useState('');
+  const [action, setAction] = useState('');
 
   useEffect(() => {
     document.title = `QuizMaster | ${category}`;
 
-    // WebSocket event listener for answer results and gameOver
     socket.onmessage = (event) => {
       const message = JSON.parse(event.data);
 
@@ -92,6 +93,10 @@ export const Match: FC<MatchProps> = ({
         setHasAnswered(false);
       }
 
+      if (message.action === 'playerQuit'){
+        setPlayers((prevPlayers) => prevPlayers.filter(player => player.id !== message.data.playerId));
+      }
+
       if (message.action === 'gameOver') {
         const winnerId = message.data.winnerId;
         const winner = players.find((player) => player.id === winnerId);
@@ -101,14 +106,13 @@ export const Match: FC<MatchProps> = ({
     };
 
     return () => {
-      socket.onmessage = null; // Clean up on unmount
+      socket.onmessage = null;
     };
   }, [updatedUser, user?.id, players, setWinner]);
 
   const handleAnswer = (answer: string) => {
     if (hasAnswered) return;
 
-    // Sending the answer to the WebSocket server
     socket.send(
       JSON.stringify({
         action: 'answer',
@@ -118,16 +122,25 @@ export const Match: FC<MatchProps> = ({
     setHasAnswered(true);
   };
 
+  const handleQuit = () => {
+    // Notify the server about the quit action
+    socket.send(
+      JSON.stringify({
+        action: 'quit',
+        data: { playerId: user?.id as string },
+      })
+    );
+
+    // Navigate back to the home page
+    navigate('/');
+  };
+
   return (
     <div className='mt-12 flex flex-col items-center lg:mt-0'>
       <Scoreboard players={players} />
       <div className='my-6 h-fit w-screen justify-center border-y border-black bg-white pb-4 text-center font-bold shadow-2xl shadow-black/25 sm:pb-8 md:my-12 md:pb-16 lg:pb-8'>
-        <h3 className='pb-2 pt-4 text-lg text-gray-400 md:text-xl'>
-          {category}
-        </h3>
-        <h2 className='px-4 text-2xl lg:text-4xl'>
-          {currentQuestion.question}
-        </h2>
+        <h3 className='pb-2 pt-4 text-lg text-gray-400 md:text-xl'>{category}</h3>
+        <h2 className='px-4 text-2xl lg:text-4xl'>{currentQuestion.question}</h2>
       </div>
       <Answers
         hasAnswered={hasAnswered}
@@ -135,6 +148,13 @@ export const Match: FC<MatchProps> = ({
         hints={hints}
         handleAnswer={handleAnswer}
       />
+      {/* Quit Button at the Bottom Center */}
+      <button
+        onClick={handleQuit}
+        className='mt-6 bg-red-500 text-white px-6 py-2 rounded shadow hover:bg-red-600'
+      >
+        Quit
+      </button>
     </div>
   );
 };

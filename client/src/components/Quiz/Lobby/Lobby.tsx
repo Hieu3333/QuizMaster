@@ -10,7 +10,7 @@ export const Lobby: FC<{ players: User[] }> = ({ players }) => {
   return (
     <div className='flex flex-col items-center'>
       <h3 className='mb-16 text-2xl font-bold text-white'>
-        Waiting for players -<span> {players.length}/4</span>
+        Waiting for players -<span> {players.length}/2</span>
       </h3>
       <ul className='flex gap-4 sm:gap-8 md:gap-12'>
         {players.map((player) => (

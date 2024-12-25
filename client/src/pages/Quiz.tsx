@@ -27,30 +27,28 @@ export const Quiz: FC = () => {
 
     // Listening to messages from the WebSocket server
     socket.onmessage = (event) => {
-     
       const message = JSON.parse(event.data);
       console.log(message);
-      
+
       switch (message.action) {
         case 'joinRoom':
           setPlayers(message.data.roomPlayers);
           break;
 
-          case 'startVoting':
-            console.log('start voting');
-            
-    
-            // Transform the categories array into a Record<number, string>
-            const transformedCategories: Record<number, string> = message.data.categories.reduce((acc: Record<number, string>, category: { id: string, name: string }) => {
-              acc[parseInt(category.id)] = category.name;  // Ensure the key is a number (parseInt)
-              return acc;
-            }, {});
-    
-            // Set the transformed categories
-            setCategories(transformedCategories);
-            setQuizState('voting');
-    
-            break;
+        case 'startVoting':
+          console.log('start voting');
+
+          // Transform the categories array into a Record<number, string>
+          const transformedCategories: Record<number, string> = message.data.categories.reduce((acc: Record<number, string>, category: { id: string, name: string }) => {
+            acc[parseInt(category.id)] = category.name; // Ensure the key is a number (parseInt)
+            return acc;
+          }, {});
+
+          // Set the transformed categories
+          setCategories(transformedCategories);
+          setQuizState('voting');
+
+          break;
 
         case 'startMatch':
           setQuizState('playing');
@@ -63,22 +61,20 @@ export const Quiz: FC = () => {
           setQuizState('end');
           break;
 
+
         default:
           console.log('Unknown message type', message.action);
       }
     };
 
     return () => {
-  
       socket.onmessage = null; // Clean up on unmount
     };
-  }, [ location.state.roomPlayers]);
+  }, [location.state.roomPlayers]);
 
-  useEffect(()=>{
-    console.log('Players in the room:',players);
-  },[players])
-
-
+  useEffect(() => {
+    console.log('Players in the room:', players);
+  }, [players]);
 
   useEffect(() => {
     // Handle game over and update the user stats

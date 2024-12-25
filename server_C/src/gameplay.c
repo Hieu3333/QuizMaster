@@ -52,9 +52,9 @@ typedef struct {
 void send_message_to_all_users(json_t *response_json, char *action) {
     // Serialize the JSON object to a string
     const char *response_str = json_dumps(response_json, 0);
-    printf("%s\n",response_str);
+    printf("%s\n\n",response_str);
     if (response_str == NULL) {
-        fprintf(stderr, "Error: Failed to serialize response to JSON.\n");
+        fprintf(stderr, "Error: Failed to serialize response to JSON.\n\n");
         json_decref(response_json);
         return;
     }
@@ -65,7 +65,7 @@ void send_message_to_all_users(json_t *response_json, char *action) {
     // Allocate buffer with LWS_PRE padding
     unsigned char *buf = malloc(LWS_PRE + response_len);
     if (!buf) {
-        fprintf(stderr, "Error: Memory allocation failed.\n");
+        fprintf(stderr, "Error: Memory allocation failed.\n\n");
         free((void *)response_str);
         json_decref(response_json);
         return;
@@ -85,11 +85,10 @@ void send_message_to_all_users(json_t *response_json, char *action) {
         // Send the message via WebSocket
         int len_voting_sent = lws_write(current_wsi, &buf[LWS_PRE], response_len, LWS_WRITE_TEXT);
         if (len_voting_sent < 0) {
-            fprintf(stderr, "Error: Failed to send 'startMatch' message to client with ID %d\n", connected_users[i]->id);
-        } else {
-            printf("Sent %s message to client %d\n", action, connected_users[i]->id);
-        }
+            fprintf(stderr, "Error: Failed to send 'startMatch' message to client with ID %d\n\n", connected_users[i]->id);
+        } 
     }
+    printf("Sent %s message to clients\n\n", action);
 
     // Cleanup
     free(buf);
@@ -103,7 +102,7 @@ size_t write_callback(void *ptr, size_t size, size_t nmemb, char *data) {
     if (total_size + strlen(data) < BUFFER_SIZE) {
         strncat(data, (char *)ptr, total_size);
     } else {
-        fprintf(stderr, "Buffer overflow detected in write_callback\n");
+        fprintf(stderr, "Buffer overflow detected in write_callback\n\n");
         return 0;
     }
     return total_size;
@@ -137,7 +136,7 @@ void fetch_questions_thread(void *args) {
     // Initialize CURL
     curl = curl_easy_init();
     if (!curl) {
-        fprintf(stderr, "Error: Failed to initialize CURL.\n");
+        fprintf(stderr, "Error: Failed to initialize CURL.\n\n");
         *result = -1;
         pthread_exit(NULL);
     }
@@ -150,7 +149,7 @@ void fetch_questions_thread(void *args) {
     // Perform the request
     res = curl_easy_perform(curl);
     if (res != CURLE_OK) {
-        fprintf(stderr, "CURL error: %s\n", curl_easy_strerror(res));
+        fprintf(stderr, "CURL error: %s\n\n", curl_easy_strerror(res));
         curl_easy_cleanup(curl);
         *result = -1;
         pthread_exit(NULL);
@@ -160,7 +159,7 @@ void fetch_questions_thread(void *args) {
     json_error_t error;
     json_t *root = json_loads(data, 0, &error);
     if (!root) {
-        fprintf(stderr, "Error parsing JSON response: %s\n", error.text);
+        fprintf(stderr, "Error parsing JSON response: %s\n\n", error.text);
         curl_easy_cleanup(curl);
         *result = -1;
         pthread_exit(NULL);
@@ -168,7 +167,7 @@ void fetch_questions_thread(void *args) {
 
     json_t *results = json_object_get(root, "results");
     if (!json_is_array(results)) {
-        fprintf(stderr, "Error: 'results' key is not an array.\n");
+        fprintf(stderr, "Error: 'results' key is not an array.\n\n");
         json_decref(root);
         curl_easy_cleanup(curl);
         *result = -1;
@@ -187,14 +186,14 @@ void fetch_questions_thread(void *args) {
         for (int j = 0; j < 4; j++) {
             // questions[i].choices[j] = (char *)malloc(256 * sizeof(char));
             if (questions[i].choices[j] == NULL) {
-                fprintf(stderr, "Memory allocation failed for choice %d\n", j);
+                fprintf(stderr, "Memory allocation failed for choice %d\n\n", j);
                 *result = -1;
                 pthread_exit(NULL);
             }
         }
 
         if (questions[i].question == NULL || questions[i].correctAnswer == NULL) {
-            fprintf(stderr, "Memory allocation failed for question or correctAnswer\n");
+            fprintf(stderr, "Memory allocation failed for question or correctAnswer\n\n");
             *result = -1;
             pthread_exit(NULL);
         }
@@ -220,12 +219,12 @@ void fetch_questions_thread(void *args) {
         decode_base64(encoded_correct_answer, questions[i].choices[choice_index]);
 
         // Print out the question, choices, and correct answer after decoding
-        printf("Question %zu: %s\n", i + 1, questions[i].question);
-        printf("Choices:\n");
-        for (int j = 0; j < 4; j++) {
-            printf("  Choice %d: %s\n", j + 1, questions[i].choices[j]);
-        }
-        printf("Correct Answer: %s\n\n", questions[i].correctAnswer);
+        // printf("Question %zu: %s\n\n", i + 1, questions[i].question);
+        // printf("Choices:\n\n");
+        // for (int j = 0; j < 4; j++) {
+        //     printf("  Choice %d: %s\n\n", j + 1, questions[i].choices[j]);
+        // }
+        // printf("Correct Answer: %s\n\n\n\n", questions[i].correctAnswer);
     }
 
     // Clean up
@@ -241,14 +240,14 @@ void fetch_questions_thread(void *args) {
 // Add a new user to the connected users array
 void add_websocket_user(struct lws *wsi) {
     if (connected_user_count >= MAX_USERS) {
-        printf("Error: Maximum number of users reached.\n");
+        printf("Error: Maximum number of users reached.\n\n");
         return;
     }
 
     // Create a new connected user entry
     ConnectedUser *new_user = (ConnectedUser *)malloc(sizeof(ConnectedUser));
     if (new_user == NULL) {
-        printf("Error: Memory allocation failed for new user.\n");
+        printf("Error: Memory allocation failed for new user.\n\n");
         return;
     }
 
@@ -258,14 +257,14 @@ void add_websocket_user(struct lws *wsi) {
 
     // Store the user in the connected_users array
     connected_users[connected_user_count++] = new_user;
-    printf("User with ID %d connected. Total connected users: %d\n", new_user->id, connected_user_count);
+    printf("New user connected. Total connected users: %d\n\n", new_user->id, connected_user_count);
 }
 
 // Remove a user from the connected users array
 void remove_websocket_user(struct lws *wsi) {
     for (int i = 0; i < connected_user_count; i++) {
         if (connected_users[i]->wsi == wsi) {
-            printf("User with ID %d disconnected.\n", connected_users[i]->id);
+            // printf("User with ID %d disconnected.\n\n", connected_users[i]->id);
 
             // Free the memory for the user and shift the array
             free(connected_users[i]);
@@ -276,7 +275,7 @@ void remove_websocket_user(struct lws *wsi) {
             return;
         }
     }
-    printf("Error: User not found for disconnection.\n");
+    printf("Error: User not found for disconnection.\n\n");
 }
 
 
@@ -284,7 +283,7 @@ void remove_websocket_user(struct lws *wsi) {
 time_t iso8601_to_time(const char *datetime) {
     struct tm tm = {0};
     if (strptime(datetime, "%Y-%m-%dT%H:%M:%S", &tm) == NULL) {
-        fprintf(stderr, "Error: Failed to parse datetime string: %s\n", datetime);
+        fprintf(stderr, "Error: Failed to parse datetime string: %s\n\n", datetime);
         return (time_t)-1;
     }
     return mktime(&tm);
@@ -294,14 +293,14 @@ time_t iso8601_to_time(const char *datetime) {
 // Function to extract user info from JSON 'data' object
 User *extract_user_from_data(json_t *data) {
     if (!data) {
-        fprintf(stderr, "Error: 'data' object is NULL.\n");
+        fprintf(stderr, "Error: 'data' object is NULL.\n\n");
         return NULL;
     }
 
     // Allocate memory for the new user
     User *user = (User *)malloc(sizeof(User));
     if (!user) {
-        fprintf(stderr, "Error: Memory allocation for User failed.\n");
+        fprintf(stderr, "Error: Memory allocation for User failed.\n\n");
         return NULL;
     }
     memset(user, 0, sizeof(User)); // Initialize all fields to zero
@@ -321,7 +320,7 @@ User *extract_user_from_data(json_t *data) {
     
 
     if (!id_json || !username_json || !password_json || !wins_json || !totalScore_json || !playedGames_json || !createdAt_json || !updatedAt_json) {
-        fprintf(stderr, "Error: Missing required fields in 'data'.\n");
+        fprintf(stderr, "Error: Missing required fields in 'data'.\n\n");
         free(user); // Free allocated memory
         return NULL;
     }
@@ -332,7 +331,7 @@ User *extract_user_from_data(json_t *data) {
     if (id_str) {
         // First, check if the ObjectId string is valid
         if (!bson_oid_is_valid(id_str,strlen(id_str))) {
-            fprintf(stderr, "Error: Invalid BSON ObjectId format in 'id'.\n");
+            fprintf(stderr, "Error: Invalid BSON ObjectId format in 'id'.\n\n");
             free(user); // Free allocated memory
             return NULL;
         }
@@ -348,7 +347,7 @@ User *extract_user_from_data(json_t *data) {
         user->username = strdup(username_str);
         user->password = strdup(password_str);
     } else {
-        fprintf(stderr, "Error: Invalid or missing username/password.\n");
+        fprintf(stderr, "Error: Invalid or missing username/password.\n\n");
         free(user);
         return NULL;
     }
@@ -364,7 +363,7 @@ User *extract_user_from_data(json_t *data) {
 
     // Check for conversion errors
     if (user->createdAt == (time_t)-1 || user->updatedAt == (time_t)-1) {
-        fprintf(stderr, "Error: Invalid datetime format in 'data'.\n");
+        fprintf(stderr, "Error: Invalid datetime format in 'data'.\n\n");
         free(user->username);
         free(user->password);
         free(user);
@@ -386,8 +385,8 @@ int find_room_for_user(User *user) {
                 bson_oid_to_string(&user->id, id_str1);
                 bson_oid_to_string(&rooms[i]->players[j].id, id_str2);
                 // User is already playing
-                // printf("User %s is already in room %d.\n", user->username, rooms[i]->id);
-                // printf("ID %s is finding room and ID %s is already in room.\n", id_str1, id_str2);
+                // printf("User %s is already in room %d.\n\n", user->username, rooms[i]->id);
+                // printf("ID %s is finding room and ID %s is already in room.\n\n", id_str1, id_str2);
                 return -1;  // User already in a room
             }
         }
@@ -401,7 +400,7 @@ int find_room_for_user(User *user) {
             rooms[i]->player_count++;
             char id_str[25];  // Buffer to hold the string representation of the BSON Object ID
                 bson_oid_to_string(&user->id, id_str);
-            printf("User %s joined room %d.\n", user->username, rooms[i]->id);
+            printf("User %s joined room %d.\n\n", user->username, rooms[i]->id);
             return rooms[i]->id;  // Room ID user joined
         }
     }
@@ -413,14 +412,14 @@ int find_room_for_user(User *user) {
 // Function to create a new room for the user
 int create_new_room(User *user) {
     if (room_count >= MAX_ROOMS) {
-        printf("Error: Cannot create new room, maximum number of rooms reached.\n");
+        printf("Error: Cannot create new room, maximum number of rooms reached.\n\n");
         return -1;  // Error code indicating failure
     }
 
     // Allocate memory for the new room
     Room *new_room = (Room *)malloc(sizeof(Room));
     if (new_room == NULL) {
-        printf("Error: Memory allocation failed for the new room.\n");
+        printf("Error: Memory allocation failed for the new room.\n\n");
         return -1;  // Memory allocation failed
     }
 
@@ -439,7 +438,7 @@ int create_new_room(User *user) {
     // Convert BSON Object ID to string
     char id_str[25];  // Buffer to hold the string representation of the BSON Object ID
     bson_oid_to_string(&user->id, id_str);
-    printf("User %s joined room %d.\n", user->username, new_room->id);
+    printf("User %s joined room %d.\n\n", user->username, new_room->id);
 
     // Store the new room in the rooms array
     rooms[room_count] = new_room;
@@ -459,7 +458,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
     switch (reason) {
 
         case LWS_CALLBACK_ESTABLISHED: {
-            printf("New client connected!\n");
+            printf("New client connected!\n\n");
             add_websocket_user(wsi);
             break;
         }
@@ -467,7 +466,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
         case LWS_CALLBACK_RECEIVE: {
             // Check for invalid length or null pointer
             if (in == NULL || len <= 0) {
-                fprintf(stderr, "Error: Invalid input data (NULL or length <= 0)\n");
+                fprintf(stderr, "Error: Invalid input data (NULL or length <= 0)\n\n");
                 return -1;
             }
 
@@ -477,28 +476,28 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
             msg[len] = '\0'; // Ensure the string is null-terminated
 
             // Print the received message safely
-            printf("Received message: %s\n", msg);
+            printf("Received message: %s\n\n", msg);
 
             // Parse the incoming message as JSON using Jansson
             json_error_t error;
             json_t *message_json = json_loads(msg, 0, &error);
 
             if (!message_json) {
-                fprintf(stderr, "Error: Failed to parse JSON. Raw message: %s\n", msg);
+                fprintf(stderr, "Error: Failed to parse JSON. Raw message: %s\n\n", msg);
                 return -1;
             }
 
             // Extract the 'action' field from the parsed JSON
             json_t *action = json_object_get(message_json, "action");
             if (!action || !json_is_string(action)) {
-                fprintf(stderr, "Error: Key 'action' not found or is not a string in JSON.\n");
+                fprintf(stderr, "Error: Key 'action' not found or is not a string in JSON.\n\n");
                 json_decref(message_json);  // Free JSON object
                 return -1;
             }
 
             const char *action_str = json_string_value(action);
             if (action_str == NULL) {
-                fprintf(stderr, "Error: 'action' value is not a string or is null.\n");
+                fprintf(stderr, "Error: 'action' value is not a string or is null.\n\n");
                 json_decref(message_json);  // Free JSON object
                 return -1;
             }
@@ -509,7 +508,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 // Extract 'data' field from JSON
                 json_t *user_json = json_object_get(message_json, "data");
                 if (!user_json || !json_is_object(user_json)) {
-                    fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n");
+                    fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n\n");
                     json_decref(message_json);  // Free JSON object
                     return -1;
                 }
@@ -517,7 +516,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 // Assuming extract_user_from_data is a function that handles the user extraction
                 User* user = extract_user_from_data(user_json);
                 if (user == NULL) {
-                    fprintf(stderr, "Error: Failed to extract user from 'data'.\n");
+                    fprintf(stderr, "Error: Failed to extract user from 'data'.\n\n");
                     json_decref(message_json);  // Free JSON object
                     free(user);
                     return -1;
@@ -526,7 +525,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 // Find or create a room for the user
                 int room_id = find_room_for_user(user);
                 if (room_id < 0) {
-                    fprintf(stderr, "Error: Failed to find or create room for user.\n");
+                    fprintf(stderr, "Error: Failed to find or create room for user.\n\n");
                     json_decref(message_json);  // Free JSON object
                     free(user);  // Free the user object
                     return -1;
@@ -546,12 +545,12 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
                     // Check if there are any players
                     if (rooms[room_access_id]->player_count == 0) {
-                        printf("No players in the room.\n");
+                        printf("No players in the room.\n\n");
                     }
 
                     // Iterate over the players in the room and add their data to the array
                     for (int i = 0; i < rooms[room_access_id]->player_count; i++) {
-                        printf("Room %d: Player %d\n",room_access_id+1,i);
+                        // printf("Room %d: Player %d\n\n",room_access_id+1,i);
                         User *player = &rooms[room_access_id]->players[i];  // Get the player
                          
                         if (player == NULL){
@@ -565,8 +564,8 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                             printf("Player Id is NULL");
                         }
                         bson_oid_to_string(&player->id, id);
-                        printf("player[%d] - id: %s, username: %s, wins: %d, totalScore: %d, playedGames: %d\n",
-           i, id, player->username, player->wins, player->totalScore, player->playedGames);
+        //                 printf("player[%d] - id: %s, username: %s, wins: %d, totalScore: %d, playedGames: %d\n\n",
+        //    i, id, player->username, player->wins, player->totalScore, player->playedGames);
 
                         json_object_set_new(player_data, "id", json_string(id));
                         json_object_set_new(player_data, "username", json_string(player->username));
@@ -635,7 +634,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
             // Extract 'data' field from JSON
             json_t *vote_data_json = json_object_get(message_json, "data");
             if (!vote_data_json || !json_is_object(vote_data_json)) {
-                fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n");
+                fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n\n");
                 json_decref(message_json);  // Free JSON object
                 return -1;
             }
@@ -645,7 +644,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
             const char *player_id_str = json_string_value(json_object_get(vote_data_json, "playerId"));
 
             if (!category_name || !player_id_str) {
-                fprintf(stderr, "Error: Missing 'category' or 'playerId' in vote data.\n");
+                fprintf(stderr, "Error: Missing 'category' or 'playerId' in vote data.\n\n");
                 json_decref(message_json);  // Free JSON object
                 return -1;
             }
@@ -672,13 +671,13 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
             }
 
             if (!voting_player) {
-                fprintf(stderr, "Error: Player with ID %s not found.\n", player_id_str);
+                fprintf(stderr, "Error: Player with ID %s not found.\n\n", player_id_str);
                 json_decref(message_json);  // Free JSON object
                 return -1;
             }
 
             // Process the vote
-            printf("Player %s voted for category '%s'\n", voting_player->username, category_name);
+            printf("Player %s voted for category '%s'\n\n", voting_player->username, category_name);
             
             // Check if the votes have reached MAX_PLAYERS
             if (rooms[current_room_id]->vote_count == MAX_PLAYERS) {
@@ -698,7 +697,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                     }
                 }
 
-                printf("Category %d has the most votes (%d votes)\n", selected_category, max_votes);
+                printf("Category %d has the most votes (%d votes)\n\n", selected_category, max_votes);
                 
 
                 int result = 0;         // Number of fetched questions
@@ -712,19 +711,19 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 // Create a thread to fetch questions
                 pthread_t thread_id;
                 if (pthread_create(&thread_id, NULL, fetch_questions_thread, &fetch_args) != 0) {
-                    fprintf(stderr, "Error: Failed to create thread.\n");
+                    fprintf(stderr, "Error: Failed to create thread.\n\n");
                     return -1;
                 }
 
                 // Wait for the thread to finish
                 if (pthread_join(thread_id, NULL) != 0) {
-                    fprintf(stderr, "Error: Failed to join thread.\n");
+                    fprintf(stderr, "Error: Failed to join thread.\n\n");
                     return -1;
                 }
 
                 // Check the result
                 if (result > 0) {
-                    printf("Fetched %d questions successfully:\n", result);
+                    printf("Fetched %d questions successfully:\n\n", result);
 
                     // Iterate over all fetched questions and copy them to room->questions
                     for (int i = 0; i < result; i++) {
@@ -753,7 +752,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
                     send_message_to_all_users(response_json,"startMatch");
                 } else {
-                    fprintf(stderr, "Failed to fetch questions.\n");
+                    fprintf(stderr, "Failed to fetch questions.\n\n");
                 }
             }
         }
@@ -764,7 +763,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
                 // Handle "answer" logic
                 json_t *answer_data_json = json_object_get(message_json, "data");
                 if (!answer_data_json || !json_is_object(answer_data_json)) {
-                fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n");
+                fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n\n");
                 json_decref(message_json);  // Free JSON object
                 return -1;
             }
@@ -774,7 +773,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
             const char *player_id_str = json_string_value(json_object_get(answer_data_json, "playerId"));
 
             if (!answer || !player_id_str) {
-                fprintf(stderr, "Error: Missing 'answer' or 'playerId' in vote data.\n");
+                fprintf(stderr, "Error: Missing 'answer' or 'playerId' in vote data.\n\n");
                 json_decref(message_json);  // Free JSON object
                 return -1;
             }
@@ -795,7 +794,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
             }
 
             if (!room) {
-                fprintf(stderr, "Error: Room not found for player %s.\n", player_id_str);
+                fprintf(stderr, "Error: Room not found for player %s.\n\n", player_id_str);
                 json_decref(message_json);  // Free JSON object
                 return -1;
             }
@@ -917,9 +916,94 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
             json_decref(message_json);  // Free JSON object
 
-            } else {
+            } else if (strcmp(action_str, "quit") == 0) {
+                // Handle "quit" logic
+                json_t *quit_data_json = json_object_get(message_json, "data");
+                if (!quit_data_json || !json_is_object(quit_data_json)) {
+                    fprintf(stderr, "Error: Key 'data' not found or is not an object in JSON.\n\n");
+                    json_decref(message_json); // Free JSON object
+                    return -1;
+                }
+
+                // Extract playerId from data
+                const char *player_id_str = json_string_value(json_object_get(quit_data_json, "playerId"));
+
+                if (!player_id_str) {
+                    fprintf(stderr, "Error: Missing 'playerId' in quit data.\n\n");
+                    json_decref(message_json); // Free JSON object
+                    return -1;
+                }
+
+                // Find the room the player is in
+                Room *room = NULL;
+                bson_oid_t player_oid;
+                bson_oid_init_from_string(&player_oid, player_id_str);
+                int player_index = -1;
+
+                for (int i = 0; i < room_count; i++) {
+                    for (int j = 0; j < rooms[i]->player_count; j++) {
+                        if (bson_oid_compare(&rooms[i]->players[j].id, &player_oid) == 0) {
+                            room = rooms[i];
+                            player_index = j;
+                            break;
+                        }
+                    }
+                    if (room) break;
+                }
+
+                if (!room) {
+                    fprintf(stderr, "Error: Room not found for player %s.\n\n", player_id_str);
+                    json_decref(message_json); // Free JSON object
+                    return -1;
+                }
+
+                // Remove the player from the room
+                if (player_index >= 0) {
+                    for (int k = player_index; k < room->player_count - 1; k++) {
+                        room->players[k] = room->players[k + 1];
+                        room->scores[k] = room->scores[k + 1];
+                        room->answered[k] = room->answered[k + 1];
+                    }
+
+                    room->player_count--; // Decrease player count
+                    printf("Player %s removed from the room.\n\n", player_id_str);
+
+                    // Notify all players about the player quitting
+                    json_t *result_json = json_object();
+                    json_object_set_new(result_json, "action", json_string("playerQuit"));
+
+                    // Create a data object
+                    json_t *data_json = json_object();
+                    json_object_set_new(data_json, "playerId", json_string(player_id_str));
+
+                    // Add data object to the result JSON
+                    json_object_set_new(result_json, "data", data_json);
+
+                    // Send the result to all users
+                    send_message_to_all_users(result_json, "playerQuit");
+
+                    // Free the result JSON
+                    json_decref(result_json);
+                    
+                } else {
+                    fprintf(stderr, "Error: Player not found in the room.\n\n");
+                }
+
+                // If the room is empty, you can optionally remove the room
+                if (room->player_count == 0) {
+                    printf("Room is now empty. Consider removing it.\n\n");
+                    // Add logic to remove the room if necessary
+                }
+
+                json_decref(message_json); // Free JSON object
+            }
+ 
+            
+            
+            
+            else {
                 // If action is unrecognized, respond with an error
-                printf("Unknown action received: %s\n", action_str);
+                // printf("Unknown action received: %s\n\n", action_str);
             }
 
             // Free the parsed JSON object after usage
@@ -931,7 +1015,7 @@ static int callback_websocket(struct lws *wsi, enum lws_callback_reasons reason,
 
 
                 case LWS_CALLBACK_CLOSED: {
-                    printf("Client disconnected!\n");
+                    printf("Client disconnected!\n\n");
                     // When a client disconnects
                     remove_websocket_user(wsi);
                     break;
@@ -964,7 +1048,7 @@ int start_server() {
     info.protocols = (struct lws_protocols[]){{"http", callback_websocket, 0, 0}, {NULL, NULL, 0, 0}};
     struct lws_context *context = lws_create_context(&info);
     if (!context) {
-        fprintf(stderr, "Error: Unable to create WebSocket context\n");
+        fprintf(stderr, "Error: Unable to create WebSocket context\n\n");
         return -1;
     }
 
