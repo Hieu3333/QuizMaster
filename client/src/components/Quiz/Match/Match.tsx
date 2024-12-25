@@ -93,8 +93,15 @@ export const Match: FC<MatchProps> = ({
         setHasAnswered(false);
       }
 
-      if (message.action === 'playerQuit'){
-        setPlayers((prevPlayers) => prevPlayers.filter(player => player.id !== message.data.playerId));
+      if (message.action === 'playerQuit') {
+        const quittingPlayer = players.find(player => player.id === message.data.playerId);
+        if (quittingPlayer) {
+          setHints(prevHints => [
+            ...prevHints,
+            `Player ${quittingPlayer.username} has quit.`
+          ]);
+        }
+        setPlayers(prevPlayers => prevPlayers.filter(player => player.id !== message.data.playerId));
       }
 
       if (message.action === 'gameOver') {
