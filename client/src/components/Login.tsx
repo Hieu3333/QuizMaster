@@ -19,9 +19,9 @@ export const Login = () => {
   ) => {
     e.preventDefault();
     setIsLoggingIn(true);
-
+  
     if (username === '' || password === '') {
-      // set Errors to prev array + new error
+      // Set errors to include "Please fill in all fields."
       if (!errors.includes('Please fill in all fields.'))
         setErrors((prev) => [...prev, 'Please fill in all fields.']);
       setIsLoggingIn(false);
@@ -31,15 +31,27 @@ export const Login = () => {
       setErrors((prev) =>
         prev.filter((error) => error !== 'Please fill in all fields.')
       );
-
+  
     try {
       const user = await login({ username, password });
-      if (user) navigate('/'); // if user is truthy, navigate to home page
+      if (user) {
+        navigate('/'); // Navigate to the home page if login is successful
+      } else {
+        // Handle cases where login does not throw an error but fails
+        if (!errors.includes('Incorrect username or password')) {
+          setErrors((prev) => [...prev, 'Incorrect username or password']);
+        }
+      }
     } catch (err) {
+      // Log the error and set the "Incorrect username or password" message
       console.error(err);
+      if (!errors.includes('Incorrect username or password')) {
+        setErrors((prev) => [...prev, 'Incorrect username or password']);
+      }
     }
     setIsLoggingIn(false);
   };
+  
 
   return (
     <>
